@@ -36,16 +36,26 @@ TEXT_SECONDARY: Final[str] = "#52514e"
 GRID: Final[str] = "#dedcd5"
 
 CATEGORICAL: Final[tuple[str, ...]] = (
-    "#2a78d6",  # 1 blue
-    "#eb6834",  # 2 orange
-    "#1baf7a",  # 3 aqua
-    "#eda100",  # 4 yellow
-    "#e87ba4",  # 5 magenta
-    "#008300",  # 6 green
-    "#6250d6",  # 7 violet
-    "#e34948",  # 8 red
+    "#3f6fa8",  # 1 slate blue
+    "#c0612f",  # 2 rust
+    "#13906c",  # 3 pine
+    "#b08a22",  # 4 bronze
+    "#8f5f9e",  # 5 plum
+    "#60802c",  # 6 olive
+    "#5f63b0",  # 7 indigo
+    "#ad4038",  # 8 brick
 )
-"""Fixed categorical order. Never cycled; a ninth series folds into Other."""
+"""Fixed categorical order. Never cycled; a ninth series folds into Other.
+
+Muted earth tones rather than saturated primaries: several of these figures
+put five series on one axes, and at full chroma that reads as a jumble. The
+set still clears every gate on the adjacent pairlist that bars and lines
+use - worst adjacent CVD dE 9.0 (protan, OKLab x100, >= 8 target), worst
+adjacent normal-vision dE 16.8 (>= 15 floor), every slot above the chroma
+floor and at or above 3:1 contrast with the surface. The first three slots,
+which carry the split strategies, also clear the stricter all-pairs gate the
+scatter figures need.
+"""
 
 #: Colour per split strategy, fixed across every figure in the study.
 SPLIT_COLOURS: Final[dict[str, str]] = {
@@ -145,6 +155,82 @@ def _title(
     axes.text(
         0.5, subtitle_y, subtitle, transform=axes.transAxes, ha="center",
         va="bottom", fontsize=8.6, color=TEXT_SECONDARY,
+    )
+
+
+#: Height of one legend row and of the subtitle line, in inches. Used to keep
+#: a title block clear of a legend whatever height that legend turns out to be.
+_LEGEND_ROW_IN: Final[float] = 0.17
+_LEGEND_GAP_IN: Final[float] = 0.08
+_SUBTITLE_IN: Final[float] = 0.30
+
+
+def _header(
+    axes: plt.Axes,
+    headline: str,
+    subtitle: str = "",
+    *,
+    ncols: int = 1,
+    **legend_kw: Any,
+) -> None:
+    """Draw a legend above the axes with the title block clear above it.
+
+    The legend wraps to as many rows as its entries need, so the space it
+    occupies is measured rather than assumed: five series at three columns
+    take two rows, and a subtitle pinned at a fixed axes fraction lands on
+    top of the second one. Heights are worked out in inches and converted
+    to axes fractions, so a short figure gets the same visual spacing as a
+    tall one.
+
+    Args:
+        axes: The axes to title and add a legend to.
+        headline: The bold first line.
+        subtitle: A smaller, secondary-ink second line.
+        ncols: Number of legend columns.
+        **legend_kw: Passed through to ``Axes.legend``.
+    """
+    ncols = max(int(ncols), 1)
+    legend = axes.legend(
+        ncols=ncols, loc="lower center", bbox_to_anchor=(0.5, 1.005), **legend_kw
+    )
+    rows = -(-len(legend.get_texts()) // ncols)  # ceiling division
+    figure = axes.get_figure()
+    axes_in = max(
+        float(axes.get_position().height) * float(figure.get_size_inches()[1]), 0.1
+    )
+    legend_in = rows * _LEGEND_ROW_IN + _LEGEND_GAP_IN
+    subtitle_y = 1.005 + legend_in / axes_in
+    # _title adds 13pt of its own, so take that back out of the pad.
+    pad = (legend_in + _SUBTITLE_IN) * 72.0 - 13.0
+    _title(axes, headline, subtitle, pad=pad, subtitle_y=subtitle_y)
+
+
+def _chance_label(
+    axes: plt.Axes, chance: float, n_groups: int, text: str = "no skill"
+) -> None:
+    """Label a chance line in clear margin to the right of the last bar group.
+
+    Putting the words on the line itself means either the line strikes
+    through them or an opaque box behind them punches a hole in whichever
+    bar happens to be underneath. Widening the axes instead gives the label
+    somewhere empty to sit, with the dashed line running beneath it.
+
+    Args:
+        axes: The axes holding the bars and the chance line.
+        chance: Y value of the chance line.
+        n_groups: Number of bar groups, which sets the right-hand edge.
+        text: The label.
+    """
+    right = n_groups - 0.5 + 0.78
+    axes.set_xlim(-0.62, right)
+    axes.text(
+        right - 0.06,
+        chance,
+        text,
+        color=TEXT_SECONDARY,
+        fontsize=7.6,
+        va="bottom",
+        ha="right",
     )
 
 
@@ -251,30 +337,16 @@ def plot_split_strategies(
             linestyle=(0, (4, 3)),
             zorder=1,
         )
-        axes.text(
-            len(targets) - 0.55,
-            chance + 0.012 * (axes.get_ylim()[1] or 1.0),
-            "no skill",
-            color=TEXT_SECONDARY,
-            fontsize=7.6,
-            va="bottom",
-            ha="right",
-        )
+        _chance_label(axes, chance, len(targets))
 
     axes.set_xticks(positions)
     axes.set_xticklabels(targets, fontsize=9)
     axes.set_ylabel(metric_label)
-    _title(
+    _header(
         axes,
         "Reported performance depends on how the data is split",
         subtitle,
-        pad=40.0,
-        subtitle_y=1.075,
-    )
-    axes.legend(
         ncols=len(strategies),
-        loc="lower center",
-        bbox_to_anchor=(0.5, 1.005),
         columnspacing=1.6,
         handlelength=1.4,
     )
@@ -414,24 +486,15 @@ def plot_representation_comparison(
         )
 
     axes.axhline(0.5, color=NULL_COLOUR, linewidth=1.3, linestyle=(0, (4, 3)), zorder=1)
-    axes.text(
-        len(targets) - 0.55, 0.515, "no skill", color=TEXT_SECONDARY,
-        fontsize=7.6, va="bottom", ha="right",
-    )
+    _chance_label(axes, 0.5, len(targets))
     axes.set_xticks(positions)
     axes.set_xticklabels(targets, fontsize=9)
     axes.set_ylabel(metric_label)
-    _title(
+    _header(
         axes,
         "Representations differ far less than evaluation protocols do",
         "the spread within a target is small next to the split-strategy gap",
-        pad=40.0,
-        subtitle_y=1.075,
-    )
-    axes.legend(
         ncols=len(representations),
-        loc="lower center",
-        bbox_to_anchor=(0.5, 1.005),
         columnspacing=1.4,
         handlelength=1.4,
     )
@@ -474,17 +537,11 @@ def plot_error_vs_similarity(
         )
     axes.set_xlabel("Tanimoto similarity to the nearest training compound")
     axes.set_ylabel(y_label)
-    _title(
+    _header(
         axes,
         "Predictions get worse the further a compound sits from the training set",
         "scaffold split, regression on pChEMBL",
-        pad=40.0,
-        subtitle_y=1.075,
-    )
-    axes.legend(
-        ncols=min(len(series), 3),
-        loc="lower center",
-        bbox_to_anchor=(0.5, 1.005),
+        ncols=min(len(series), 5),
         columnspacing=1.6,
         handlelength=1.6,
     )
@@ -527,17 +584,11 @@ def plot_coverage_tradeoff(
         )
     axes.set_xlabel("coverage (fraction of the test set still predicted)")
     axes.set_ylabel(y_label)
-    _title(
+    _header(
         axes,
         "Refusing to predict outside the applicability domain buys accuracy",
         "and costs coverage; the operating point is a project decision",
-        pad=40.0,
-        subtitle_y=1.075,
-    )
-    axes.legend(
-        ncols=min(len(series), 3),
-        loc="lower center",
-        bbox_to_anchor=(0.5, 1.005),
+        ncols=min(len(series), 5),
         columnspacing=1.6,
         handlelength=1.6,
     )
@@ -609,17 +660,11 @@ def plot_enrichment_curves(
     axes.set_ylim(0.0, 1.0)
     axes.set_xlabel("fraction of the ranked list screened (log scale)")
     axes.set_ylabel("fraction of true actives recovered")
-    _title(
+    _header(
         axes,
         "A screen only ever buys the top of the list",
         "scaffold split, random forest classifier",
-        pad=40.0,
-        subtitle_y=1.075,
-    )
-    axes.legend(
-        ncols=min(len(series), 3),
-        loc="lower center",
-        bbox_to_anchor=(0.5, 1.005),
+        ncols=min(len(series), 5),
         columnspacing=1.6,
         handlelength=1.6,
     )
@@ -656,7 +701,9 @@ def plot_calibration(
         zorder=1,
     )
     axes.text(
-        0.055, 0.105, "perfectly calibrated", color=TEXT_SECONDARY,
+        # Low on the diagonal the curves are bunched and run straight through
+        # the words; at the top the diagonal is clear of every series.
+        0.66, 0.70, "perfectly calibrated", color=TEXT_SECONDARY,
         fontsize=7.8, rotation=45, rotation_mode="anchor",
     )
     for index, (label, (predicted, observed)) in enumerate(series.items()):
@@ -869,18 +916,12 @@ def plot_leakage(
     axes.set_xticks(positions)
     axes.set_xticklabels(targets, fontsize=9)
     axes.set_ylabel("fraction of test compounds\nwhose scaffold was in training")
-    _title(
+    _header(
         axes,
         "Why random splits flatter a model",
         "a scaffold split leaks nothing by construction; "
         "a random split leaks most of the test set",
-        pad=40.0,
-        subtitle_y=1.075,
-    )
-    axes.legend(
         ncols=len(strategies),
-        loc="lower center",
-        bbox_to_anchor=(0.5, 1.005),
         columnspacing=1.6,
         handlelength=1.4,
     )
