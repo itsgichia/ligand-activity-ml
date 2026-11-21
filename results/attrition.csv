@@ -1,0 +1,46 @@
+target,target_chembl_id,step,removed,remaining
+herg,CHEMBL240,Raw activity records from the API,0,20080
+herg,CHEMBL240,Dropped: missing SMILES or unparseable potency,7,20073
+herg,CHEMBL240,"Dropped: censored relation (>, <, >=, <=, ~)",6047,14026
+herg,CHEMBL240,Dropped: ChEMBL duplicate flag or data-validity comment,1759,12267
+herg,CHEMBL240,Dropped: potency outside 0.1 pM - 100 mM,0,12267
+herg,CHEMBL240,Dropped: RDKit parse failure or outside size window,14,12253
+herg,CHEMBL240,Exact measurements retained,0,12253
+herg,CHEMBL240,Dropped: replicate measurements merged to median pChEMBL,1219,11034
+herg,CHEMBL240,Unique compounds in the modelling set,0,11034
+d2,CHEMBL217,Raw activity records from the API,0,17328
+d2,CHEMBL217,Dropped: missing SMILES or unparseable potency,100,17228
+d2,CHEMBL217,"Dropped: censored relation (>, <, >=, <=, ~)",2500,14728
+d2,CHEMBL217,Dropped: ChEMBL duplicate flag or data-validity comment,1530,13198
+d2,CHEMBL217,Dropped: potency outside 0.1 pM - 100 mM,0,13198
+d2,CHEMBL217,Dropped: RDKit parse failure or outside size window,207,12991
+d2,CHEMBL217,Exact measurements retained,0,12991
+d2,CHEMBL217,Dropped: replicate measurements merged to median pChEMBL,3906,9085
+d2,CHEMBL217,Unique compounds in the modelling set,0,9085
+ache,CHEMBL220,Raw activity records from the API,0,9764
+ache,CHEMBL220,Dropped: missing SMILES or unparseable potency,32,9732
+ache,CHEMBL220,"Dropped: censored relation (>, <, >=, <=, ~)",1131,8601
+ache,CHEMBL220,Dropped: ChEMBL duplicate flag or data-validity comment,1465,7136
+ache,CHEMBL220,Dropped: potency outside 0.1 pM - 100 mM,0,7136
+ache,CHEMBL220,Dropped: RDKit parse failure or outside size window,13,7123
+ache,CHEMBL220,Exact measurements retained,0,7123
+ache,CHEMBL220,Dropped: replicate measurements merged to median pChEMBL,1123,6000
+ache,CHEMBL220,Unique compounds in the modelling set,0,6000
+dpp4,CHEMBL284,Raw activity records from the API,0,6394
+dpp4,CHEMBL284,Dropped: missing SMILES or unparseable potency,9,6385
+dpp4,CHEMBL284,"Dropped: censored relation (>, <, >=, <=, ~)",825,5560
+dpp4,CHEMBL284,Dropped: ChEMBL duplicate flag or data-validity comment,654,4906
+dpp4,CHEMBL284,Dropped: potency outside 0.1 pM - 100 mM,0,4906
+dpp4,CHEMBL284,Dropped: RDKit parse failure or outside size window,4,4902
+dpp4,CHEMBL284,Exact measurements retained,0,4902
+dpp4,CHEMBL284,Dropped: replicate measurements merged to median pChEMBL,527,4375
+dpp4,CHEMBL284,Unique compounds in the modelling set,0,4375
+adrb2,CHEMBL210,Raw activity records from the API,0,3585
+adrb2,CHEMBL210,Dropped: missing SMILES or unparseable potency,52,3533
+adrb2,CHEMBL210,"Dropped: censored relation (>, <, >=, <=, ~)",484,3049
+adrb2,CHEMBL210,Dropped: ChEMBL duplicate flag or data-validity comment,315,2734
+adrb2,CHEMBL210,Dropped: potency outside 0.1 pM - 100 mM,0,2734
+adrb2,CHEMBL210,Dropped: RDKit parse failure or outside size window,5,2729
+adrb2,CHEMBL210,Exact measurements retained,0,2729
+adrb2,CHEMBL210,Dropped: replicate measurements merged to median pChEMBL,683,2046
+adrb2,CHEMBL210,Unique compounds in the modelling set,0,2046

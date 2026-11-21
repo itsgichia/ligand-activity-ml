@@ -1,0 +1,69 @@
+{
+  "target_chembl_id": "CHEMBL220",
+  "target_name": "ache",
+  "target_label": "Acetylcholinesterase (ACHE)",
+  "fetch_date": "2026-11-21",
+  "n_raw_records": 9764,
+  "n_exact_records": 7123,
+  "n_compounds": 6000,
+  "pchembl_min": 4.0,
+  "pchembl_max": 10.961,
+  "pchembl_median": 6.0,
+  "n_assays": 7005,
+  "n_documents": 709,
+  "year_min": 1986,
+  "year_max": 2025,
+  "endpoint_counts": {
+    "IC50": 5654,
+    "Ki": 307,
+    "EC50": 39
+  },
+  "attrition": [
+    {
+      "step": "Raw activity records from the API",
+      "removed": 0,
+      "remaining": 9764
+    },
+    {
+      "step": "Dropped: missing SMILES or unparseable potency",
+      "removed": 32,
+      "remaining": 9732
+    },
+    {
+      "step": "Dropped: censored relation (>, <, >=, <=, ~)",
+      "removed": 1131,
+      "remaining": 8601
+    },
+    {
+      "step": "Dropped: ChEMBL duplicate flag or data-validity comment",
+      "removed": 1465,
+      "remaining": 7136
+    },
+    {
+      "step": "Dropped: potency outside 0.1 pM - 100 mM",
+      "removed": 0,
+      "remaining": 7136
+    },
+    {
+      "step": "Dropped: RDKit parse failure or outside size window",
+      "removed": 13,
+      "remaining": 7123
+    },
+    {
+      "step": "Exact measurements retained",
+      "removed": 0,
+      "remaining": 7123
+    },
+    {
+      "step": "Dropped: replicate measurements merged to median pChEMBL",
+      "removed": 1123,
+      "remaining": 6000
+    },
+    {
+      "step": "Unique compounds in the modelling set",
+      "removed": 0,
+      "remaining": 6000
+    }
+  ],
+  "met_threshold": true
+}

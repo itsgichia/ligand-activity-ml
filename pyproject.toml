@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ligand-activity-ml"
+version = "0.1.0"
+description = "Ligand-based activity prediction across multiple protein targets, and an honest evaluation of how well it works"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Gichia Muiruri" }]
+keywords = [
+    "cheminformatics",
+    "virtual-screening",
+    "qsar",
+    "machine-learning",
+    "scaffold-split",
+    "applicability-domain",
+    "enrichment-factor",
+    "bedroc",
+    "chembl",
+    "rdkit",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+]
+dependencies = [
+    "matplotlib>=3.8",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "rdkit>=2024.3,<2026.9",
+    "requests>=2.31",
+    "scikit-learn>=1.6",
+    "scipy>=1.12",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.urls]
+Repository = "https://github.com/itsgichia/ligand-activity-ml"
+
+[project.scripts]
+ligandml-fetch = "ligandml.chembl:main"
+
+[tool.setuptools.packages.find]
+include = ["ligandml*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+    "ignore::sklearn.exceptions.ConvergenceWarning",
+]
+
+[tool.ruff]
+line-length = 90
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "D", "UP", "B", "ANN"]
+ignore = ["ANN401"]
+
+[tool.ruff.lint.pydocstyle]
+# Docstrings are Google style (Args:/Returns:/Raises:).
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Test docstrings explain what a case proves, in prose, rather than
+# documenting an API, so the summary-line rules do not apply to them.
+"tests/*" = ["D101", "D102", "D103", "D205", "D401", "ANN001", "ANN201"]

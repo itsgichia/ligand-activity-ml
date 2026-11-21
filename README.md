@@ -1,0 +1,642 @@
+# Ligand activity ML — and how much of it survives an honest test
+
+Machine learning models that predict whether a compound is active at a
+protein target from its 2D structure alone, built across **five human
+targets and 32,540 compounds** of real ChEMBL bioactivity data.
+
+The models work. The point of this repository is the second question:
+**how much of "working" is an artefact of how the test set was chosen?**
+
+Changing nothing but the train/test split — same data, same models, same
+seed — moves the headline number from **ROC AUC 0.88 to 0.79 to 0.71**, and
+regression R² from **0.67 to 0.46 to 0.23**. Every number below was produced
+by the code in this repository, on data it fetched itself.
+
+---
+
+## The problem
+
+A screening library has millions of compounds. An assay costs money and a
+chemist's week per plate. So nobody tests the library — they rank it, test
+the top, and throw the rest away. The ranking *is* the product, and a
+ligand-based model that has seen which compounds were active at a target
+before is the cheapest way to produce one: a fingerprint costs microseconds,
+a dose–response curve costs days.
+
+That makes the honest question not "is the model accurate?" but **"is it
+accurate on the compounds I am actually going to ask it about?"** Those are
+never the compounds it was trained on, nor close analogues of them. They are
+new chemistry — a scaffold nobody has tried, a series designed next year.
+
+A random train/test split does not ask that question. It scatters members of
+the same congeneric series across both sides, so the test set is full of near
+neighbours of training compounds and the model can score well by lookup
+rather than by having learned anything that generalises.
+
+This repository measures the size of that gap.
+
+---
+
+## Results
+
+### 1. The split strategy decides the headline number
+
+Random forest, ECFP4 (2048 bits), 20% held out, identical in every column
+except how the 20% was chosen.
+
+![Performance by split strategy](figures/split_strategy_performance.png)
+
+**Classification — ROC AUC at pChEMBL ≥ 6**
+
+| Target | random | scaffold | time | random → scaffold | random → time |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| hERG | 0.876 | 0.793 | 0.709 | −0.084 | −0.168 |
+| D2 | 0.877 | 0.837 | 0.711 | −0.040 | −0.166 |
+| AChE | 0.919 | 0.817 | 0.708 | −0.102 | −0.211 |
+| DPP-4 | 0.895 | 0.833 | 0.773 | −0.063 | −0.122 |
+| β2-adrenergic | 0.907 | 0.837 | 0.909 | −0.071 | **+0.001** |
+
+**Regression — R² on pChEMBL**
+
+| Target | random | scaffold | time |
+| --- | ---: | ---: | ---: |
+| hERG | 0.586 | 0.389 | 0.145 |
+| D2 | 0.649 | 0.469 | 0.119 |
+| AChE | 0.697 | 0.437 | 0.262 |
+| DPP-4 | 0.640 | 0.455 | 0.271 |
+| β2-adrenergic | 0.763 | 0.554 | 0.340 |
+| **mean** | **0.667** | **0.461** | **0.227** |
+
+#### How much do random splits overstate performance? Plainly:
+
+Averaged over all **20 target × model pairs** (`results/split_gap.csv`):
+
+| Framing | metric | scaffold split costs | time split costs |
+| --- | --- | ---: | ---: |
+| Classification | ROC AUC | **−0.079 (−9.0% relative)** | **−0.146 (−16.8% relative)** |
+| Regression | Spearman ρ | **−0.148 (−19.7% relative)** | **−0.303 (−41.0% relative)** |
+
+In the regression framing the effect is severe enough to flip the sign of
+the result: under a time split, **ridge regression scores a negative R² on
+four of the five targets** (hERG −0.74, D2 −0.62, AChE −0.43, DPP-4 −0.26) —
+worse than predicting the training mean — while the *same model on the same
+data* reports R² 0.39–0.70 under a random split.
+
+Stated as plainly as the data allows: **a random split flatters these models
+by about 9% of ROC AUC and about 20% of rank correlation. Reported R² under
+a random split is roughly three times what the same model achieves when
+asked to predict the chemistry that came next** (0.67 vs 0.23), **and the
+random-split RMSE understates the time-split RMSE by 65%** (0.67 vs 1.10 log
+units, averaged over the five targets).
+
+![Split gap per target and model](figures/split_gap.png)
+
+**The one exception, reported rather than buried.** β2-adrenergic under a
+time split (0.909) beats its own random split (0.907). It is the smallest
+target (2,046 compounds), its time split holds only 372 test compounds, and
+**196 compounds were dropped from that split for having no publication
+year** — the largest such loss in the study. One target out of five breaking
+the pattern on the noisiest split is what an honest table looks like; a
+perfectly monotone one would be more suspicious.
+
+### 2. Why: a random split leaks most of the test set
+
+![Scaffold leakage by split](figures/split_leakage.png)
+
+Fraction of test compounds whose Bemis–Murcko scaffold also appears in
+training (`results/split_leakage.csv`):
+
+| Target | random | scaffold | time |
+| --- | ---: | ---: | ---: |
+| hERG | 0.617 | 0.000 | 0.044 |
+| D2 | 0.700 | 0.000 | 0.132 |
+| AChE | 0.678 | 0.000 | 0.147 |
+| DPP-4 | 0.726 | 0.000 | 0.255 |
+| β2-adrenergic | 0.663 | 0.000 | 0.194 |
+
+Under a random split **62–73% of test compounds share a ring system with
+something the model trained on**. The scaffold split leaks nothing, by
+construction, and `tests/test_splits.py` asserts that on the real datasets.
+The time split leaks 4–26%, which is roughly how much of a field's chemistry
+carries across its cutoff year — least for hERG, whose counter-screen data
+turns over fastest, most for DPP-4, whose 2015 cutoff leaves a decade of
+gliptin analogues on the far side.
+
+![Chemical space by split](figures/chemical_space_pca.png)
+
+The same PCA in all three panels; only the colouring changes. The random
+split speckles its test set evenly through the training distribution, while
+the scaffold and time splits leave whole regions untouched. (Two components
+of a 2048-bit space explain ~2% of variance each, so this is an
+illustration, not evidence — the evidence is the leakage table above.)
+
+### 3. Representations matter, but much less than the protocol
+
+![Representation comparison](figures/representation_comparison.png)
+
+Mean ROC AUC over the five targets, scaffold split
+(`results/representation_comparison.csv`):
+
+| Representation | features | logistic regression | random forest |
+| --- | ---: | ---: | ---: |
+| ECFP6, 2048 bits | 2,048 | 0.770 | **0.824** |
+| ECFP4, 2048 bits | 2,048 | **0.791** | 0.823 |
+| ECFP4, 1024 bits | 1,024 | 0.782 | 0.821 |
+| MACCS keys | 167 | 0.705 | 0.790 |
+| RDKit 2D descriptors | 34 | 0.708 | 0.781 |
+
+With a random forest the whole spread across five representations is
+**0.043 AUC** — about half the cost of moving from a random to a scaffold
+split (0.079), and under a third of the cost of a time split (0.146).
+Doubling the fingerprint from 1024 to 2048 bits buys 0.002. Going from
+radius 2 to radius 3 buys 0.001.
+
+**The protocol you evaluate under changes the answer more than the features
+you feed the model.** That is the practical finding of this repository.
+
+### 4. Applicability domain: error rises as similarity falls
+
+![Error versus nearest-neighbour similarity](figures/error_vs_similarity.png)
+
+Test compounds binned by Tanimoto similarity to their nearest training
+neighbour, scaffold split, random forest regression
+(`results/applicability_domain.csv`). Mean absolute error, in log units:
+
+| NN similarity | hERG | D2 | AChE | DPP-4 | β2 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0.2–0.3 | 0.55 | 0.86 | 0.89 | 1.65 | 0.94 |
+| 0.4–0.5 | 0.55 | 0.74 | 0.93 | 1.00 | 1.00 |
+| 0.6–0.7 | 0.50 | 0.64 | 0.74 | 0.64 | 0.88 |
+| 0.7–1.0 | 0.46 | 0.50 | 0.67 | 0.53 | 0.63 |
+
+The trend is negative on **all five targets** (Spearman ρ between bin
+similarity and bin MAE: −0.68, −1.00, −0.82, −0.61, −0.86). Comparing the
+0.2–0.3 band with the 0.7–1.0 band, a compound with no close analogue in the
+training set is predicted between **1.2× (hERG) and 3.1× (DPP-4) worse**
+than one with a near neighbour.
+
+![Coverage/accuracy trade-off](figures/coverage_tradeoff.png)
+
+**But the trade-off curve is less generous than the bins suggest.** Refusing
+to predict for everything below the 90th similarity percentile — keeping the
+most similar 10% of the test set — improves RMSE by 11% on hERG (0.687 →
+0.612) and 13% on D2 (0.770 → 0.673), but only 4% on AChE, 5% on β2, and on
+DPP-4 it makes things slightly **worse** (0.886 → 0.905). The applicability
+domain reliably flags *which* predictions are shaky; it is a much blunter
+instrument for buying accuracy back, because the retained set is still
+chemically heterogeneous. Both results are in `results/coverage_curve.csv`.
+
+### 5. Screening metrics, and an honest look at their ceiling
+
+![Enrichment curves](figures/enrichment_curves.png)
+
+A screen only buys the top of the list, so this is the table that matters —
+scaffold split, random forest (`results/screening_demo.csv`). Intervals are
+400-resample bootstraps over test compounds:
+
+| Target | test set | active rate | top 1% | hit rate | recall | EF@1% (95% CI) | EF ceiling | recall@5% | EF@5% |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| hERG | 2,207 | 22.7% | 22 cpds | **90.9%** | 4.0% | **4.01** (3.40–4.56) | 4.41 | 18.6% | 3.72 |
+| D2 | 1,817 | 72.3% | 18 cpds | 100% | 1.4% | 1.38 (1.35–1.43) | 1.38 | 6.9% | 1.38 |
+| AChE | 1,200 | 52.3% | 12 cpds | 91.7% | 1.8% | 1.75 (1.32–1.98) | 1.91 | 9.2% | 1.85 |
+| DPP-4 | 875 | 82.4% | 9 cpds | 100% | 1.3% | 1.21 (1.18–1.25) | 1.21 | 5.8% | 1.16 |
+| β2 | 409 | 60.9% | 4 cpds | 75.0% | 1.2% | 1.23 (0.37–1.74) | 1.64 | 7.6% | 1.56 |
+
+**Read the ceiling column before the EF column.** Enrichment cannot exceed
+`min(1/f, 1/active_rate)`. On D2 and DPP-4, 72% and 82% of test compounds
+are already active, so the best possible EF at 1% is 1.38 and 1.21 — and the
+model hits both exactly. Those are not weak results, they are **saturated**
+ones, and quoting "EF = 1.2" without the ceiling would badly misrepresent
+them. hERG, the only genuinely imbalanced target, is where enrichment has
+room to mean something: EF 4.01 against a ceiling of 4.41, with a hit rate
+of 91% in the top 22 compounds.
+
+The same caution applies to BEDROC. **BEDROC = 0.5 is not chance** — at
+these alphas the random-ranking expectation is essentially the active ratio,
+so the random baseline is 0.23 on hERG, 0.52 on AChE and 0.82 on DPP-4.
+hERG's BEDROC of 0.93 clears its baseline by 0.70; DPP-4's higher-looking
+1.00 clears its own by 0.18. Every BEDROC in
+`results/split_comparison.csv` therefore sits next to its own baseline
+(`bedroc_1pct_random`), because the raw value alone is uninterpretable.
+
+The β2 row shows why confidence intervals belong in the table: the top 1% of
+409 compounds is **four molecules**, and the EF interval (0.37–1.74) spans
+from worse-than-random to near-ceiling.
+
+![Enrichment by split strategy](figures/split_strategy_enrichment.png)
+
+**And here is the trap that makes the ceiling column non-negotiable.**
+Judged by enrichment, the split-strategy ordering appears to *reverse*: hERG
+scores EF 4.44 under a random split but **6.39 under a time split**, its
+worst split by every other measure (ROC AUC 0.709). The explanation is not
+that the model got better at extrapolating. It is that the time-split test
+set is less active (15.7% vs 21.5%), which raises the attainable ceiling
+from 4.66 to 6.39 — and the model is pinned near that ceiling either way:
+95% of it under the random split, and exactly on it under the time split.
+
+So enrichment — and any other metric that moves with class balance, PR AUC
+included — **cannot be compared across splits here at all**, because each
+split produces a test set with a different active rate and therefore a
+different ceiling. ROC AUC, being invariant to class balance, can. That is
+the practical reason the headline comparison in §1 is led with AUC, and why
+the enrichment table is reported per target beside its own ceiling rather
+than the other way round.
+
+### 6. Calibration
+
+![Calibration curves](figures/calibration.png)
+
+Expected calibration error, pooled over targets (`results/calibration.csv`):
+
+| Model | random | scaffold | time |
+| --- | ---: | ---: | ---: |
+| random forest | 0.031 | **0.048** | 0.051 |
+| linear SVM (Platt-scaled) | 0.085 | 0.058 | 0.069 |
+| gradient boosting | 0.046 | 0.098 | 0.103 |
+| logistic regression | 0.089 | **0.129** | 0.177 |
+
+Two things worth noting. **Calibration degrades with split difficulty for
+three of the four models** — a model out of its domain is not only less
+accurate, it is also more wrong about how confident it should be, which is
+the worse failure if the probability feeds a decision rule. Logistic
+regression is the clearest case, doubling its ECE from 0.089 to 0.177.
+
+The exception is the linear SVM, which actually improves from random to
+scaffold (0.085 → 0.058), and it is an artefact worth naming: that model is
+**Platt-scaled by internal cross-validation** while the other three report
+raw probabilities. Its calibration is a property of the pipeline, not a
+discovery about SVMs, and it is fitted on the training split, so it tracks
+split difficulty differently from the rest.
+
+### 7. The signal is real: y-scrambling
+
+![Y-scrambling null distributions](figures/y_scrambling.png)
+
+Twenty label permutations per target, refitting the whole pipeline each
+time, scored on the untouched scaffold-split test set
+(`results/y_scrambling.csv`):
+
+| Target | observed AUC | null mean ± SD | null max | z | p |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| hERG | 0.793 | 0.480 ± 0.029 | 0.539 | 10.7 | 0.048 |
+| D2 | 0.837 | 0.522 ± 0.032 | 0.567 | 9.9 | 0.048 |
+| AChE | 0.817 | 0.499 ± 0.036 | 0.577 | 8.8 | 0.048 |
+| DPP-4 | 0.833 | 0.527 ± 0.043 | 0.598 | 7.2 | 0.048 |
+| β2 | 0.837 | 0.518 ± 0.063 | 0.612 | 5.1 | 0.048 |
+
+Every null distribution sits on chance, which says the test itself is
+calibrated; every observed score sits 5–11 standard deviations above its own
+null, and above the maximum of all 20 permutations. p = 0.048 is the floor
+with 20 permutations, not a borderline result. **The models have learned
+real structure–activity relationships — the scaffold-split numbers are the
+honest size of what they learned, not an absence of signal.**
+
+---
+
+## The data
+
+All bioactivity comes from the **ChEMBL REST API**
+(<https://www.ebi.ac.uk/chembl/api/data/>), fetched on **2026-11-21** and
+cached in `data/` with a `.meta.json` recording the target, the fetch date,
+every record count and the full attrition table — so the repository runs
+offline and every number stays auditable.
+
+Five human targets were checked against live record counts before being
+committed to. **All five cleared the 800-compound threshold, so none was
+dropped.**
+
+| Target | ChEMBL ID | Why it is here | Raw | Exact | **Compounds** | Scaffolds | Docs | Years | Active @ 1 µM |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: |
+| hERG channel (KCNH2) | `CHEMBL240` | Cardiotoxicity. Predicting hERG block kills candidates, not just papers | 20,080 | 12,253 | **11,034** | 5,557 | 2,480 | 1995–2025 | 21.9% |
+| Dopamine D2 (DRD2) | `CHEMBL217` | The canonical antipsychotic target and the field's most-used benchmark | 17,328 | 12,991 | **9,085** | 3,750 | 861 | 1987–2025 | 77.6% |
+| Acetylcholinesterase | `CHEMBL220` | Alzheimer's symptomatic therapy; decades of diverse chemistry | 9,764 | 7,123 | **6,000** | 2,563 | 709 | 1986–2025 | 50.0% |
+| DPP-4 | `CHEMBL284` | Type 2 diabetes, the gliptins — the antidiabetic thread from the author's prior work | 6,394 | 4,902 | **4,375** | 1,600 | 295 | 1996–2025 | 83.5% |
+| β2-adrenergic | `CHEMBL210` | Asthma/COPD bronchodilators; a GPCR with both agonist and antagonist chemistry | 3,585 | 2,729 | **2,046** | 933 | 241 | 1991–2025 | 74.2% |
+
+Endpoint mix (`results/dataset_summary.csv`): hERG is 87% IC50, D2 is 85%
+Ki, AChE 94% IC50, DPP-4 89% IC50, and β2 is the most mixed at 53% EC50 /
+25% IC50 / 21% Ki.
+
+> **The class balances are a finding in themselves.** Four of five targets
+> are *majority active* at 1 µM — DPP-4 is 83% active. ChEMBL records what
+> people chose to publish, which is mostly compounds from series they were
+> already optimising. A real screening library is a fraction of a percent
+> active. This is why the enrichment ceilings in §5 are so low, and why
+> these EF values do not transfer to a prospective campaign.
+
+### Cleaning and attrition
+
+Every step is counted, per target, in `results/attrition.csv`. Censored
+measurements are discarded, not clipped: `IC50 > 10000 nM` is a bound, not a
+measurement, and treating it as one injects false potencies into training.
+
+| Step | hERG | D2 | AChE | DPP-4 | β2 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Raw activity records from the API | 20,080 | 17,328 | 9,764 | 6,394 | 3,585 |
+| − missing SMILES or unparseable potency | −7 | −100 | −32 | −9 | −52 |
+| − **censored relation** (`>`, `<`, `≥`, `≤`, `~`) | −6,047 | −2,500 | −1,131 | −825 | −484 |
+| − ChEMBL duplicate flag or validity comment | −1,759 | −1,530 | −1,465 | −654 | −315 |
+| − potency outside 0.1 pM – 100 mM | 0 | 0 | 0 | 0 | 0 |
+| − RDKit parse failure or outside size window | −14 | −207 | −13 | −4 | −5 |
+| **Exact measurements retained** | 12,253 | 12,991 | 7,123 | 4,902 | 2,729 |
+| − replicates merged to median pChEMBL | −1,219 | −3,906 | −1,123 | −527 | −683 |
+| **Unique compounds modelled** | **11,034** | **9,085** | **6,000** | **4,375** | **2,046** |
+
+Censoring removes 30% of hERG's records — by far the largest single loss,
+and exactly what you would expect of a counter-screen where most compounds
+are reported as "inactive above 10 µM".
+
+Structures are desalted to their largest fragment and then **neutralised**,
+so a hydrochloride, a sodium salt and the free parent collapse onto one
+structure before deduplication. Without that step they would stay separate
+rows with correlated labels — precisely the near-duplicate pairs that can
+straddle a split. Potencies are converted by recomputation from the
+nanomolar value (`pChEMBL = 9 − log₁₀[nM]`) rather than by trusting ChEMBL's
+own field, and replicates of one structure collapse to their **median**.
+
+---
+
+## Methods
+
+### Representations
+
+| Slug | What it is | Features |
+| --- | --- | ---: |
+| `rdkit2d` | Interpretable RDKit 2D descriptors — weight, cLogP, TPSA, ring and rotatable-bond counts, fraction sp³, Chi/Kappa connectivity indices, partial-charge and E-state summaries | 34 |
+| `ecfp4_1024` | Morgan circular fingerprint, radius 2, folded to 1024 bits | 1,024 |
+| `ecfp4_2048` | Morgan circular fingerprint, radius 2, folded to 2048 bits — the field's default, and what every analysis outside §3 uses | 2,048 |
+| `ecfp6_2048` | Morgan circular fingerprint, radius 3 — larger atom environments | 2,048 |
+| `maccs` | MACCS structural keys: a fixed, hand-curated substructure vocabulary | 167 |
+
+### Models
+
+Four families spanning capacity, with **no per-cell hyperparameter tuning** —
+tuning each of the 120 cells would confound the comparison of evaluation
+protocols with tuning noise.
+
+| Slug | Classification | Regression |
+| --- | --- | --- |
+| `linear` | L2 logistic regression, balanced class weights | Ridge |
+| `svm` | Linear SVM, Platt-scaled to probabilities by 3-fold internal CV | Linear SVR |
+| `random_forest` | 300 trees, `sqrt` features per split | 300 trees |
+| `gradient_boosting` | Histogram gradient boosting, 200 rounds | same |
+
+Dense descriptor blocks are median-imputed and standardised; binary
+fingerprints have their all-zero bits dropped.
+
+Both framings run on identical splits: **regression** on pChEMBL, and
+**classification** at **pChEMBL ≥ 6.0** (1 µM).
+
+> **Why that threshold.** 1 µM is the conventional line for "this compound
+> does something at this target" in public bioactivity data: roughly where
+> cell-based assays stop being dominated by non-specific effects, and the
+> usual floor for a hit worth optimising. It is a round number near the
+> middle of the ChEMBL potency distribution. It is still a choice, so it is
+> recorded in every result row and the class balance it produces is reported
+> per target above.
+
+### Splits
+
+All three hold out **20%**, applied to the same cleaned table with the same
+models and the same seed. Only the partition changes.
+
+| Strategy | Construction | What it asks |
+| --- | --- | --- |
+| `random` | Uniform random, seeded | Can you score compounds from the same pool you trained on? |
+| `scaffold` | Bemis–Murcko groups kept intact; the largest groups go to training, so the test set is the long tail of rarer chemotypes | Can you score a chemotype you have never seen? |
+| `time` | Cutoff on first-publication year, chosen so the test fraction lands nearest 20% (cutoffs 2020, 2020, 2021, 2015, 2019) | Can you score the chemistry that came next? |
+
+The scaffold and time splits take **no seed** — they are deterministic
+functions of the chemistry and of the publication record — so nothing
+reported under them can be a lucky draw. Compounds with no publication year
+are excluded from the time split and counted (`n_unknown_year`: 126, 34, 23,
+0 and 196).
+
+### Metrics
+
+Regression: R², RMSE, MAE, Pearson *r*, Spearman ρ.
+
+Classification: ROC AUC, PR AUC, balanced accuracy, MCC, Brier, log loss,
+expected calibration error, and the screening metrics that decide whether a
+model is worth using:
+
+- **Enrichment factor** at 1% and 5%, always beside its attainable ceiling
+  `min(1/f, 1/active_rate)`.
+- **BEDROC** at the alphas that put 80% of the weight in the top 1% and 5%
+  (`α = ln 5 / f`, so 160.9 and 32.2), always beside its random baseline.
+- **Calibration**: reliability curves and ECE, for when a probability is
+  used as a number rather than as a rank.
+
+95% confidence intervals are 400-resample bootstraps over test compounds.
+They capture test-set sampling error only — the variance from *choosing a
+different split* is larger, and is the subject of the whole study.
+
+---
+
+## Limitations
+
+Read every number above with these in mind.
+
+1. **Public bioactivity data is heterogeneous.** The labels pool IC50, Ki and
+   EC50 from hundreds of assays and laboratories over four decades, with
+   different cell lines, incubation times and readouts. The same compound
+   measured twice in the literature routinely differs by half a log unit. A
+   large part of the residual error is assay noise that no representation can
+   model, and no RMSE here should be read as the model's intrinsic limit.
+2. **ChEMBL is a biased sample of chemistry**, as the 50–83% active rates
+   show. The enrichment factors characterise the ranking on *this* test set;
+   they are not the yield of a campaign against a real library.
+3. **No decoys.** A prospective screen is dominated by diverse, untested,
+   probably-inactive compounds. Here the inactives are *measured* inactives,
+   chemically close to the actives because somebody made them in the same
+   series.
+4. **Activity cliffs.** A single atom can cost two log units of potency.
+   Methods built on 2D similarity cannot see that, and scaffold splits land
+   the model squarely where it happens.
+5. **No 3D, no protein structure.** Purely ligand-based: no pose, no induced
+   fit, no account of *why* a compound binds, and no way to reason about
+   selectivity between related targets.
+6. **No ADMET, no synthetic accessibility, no novelty filter.** A top-ranked
+   compound may be unmakeable, insoluble, promiscuous or long since patented.
+7. **In vitro potency is not a drug.** Nothing here speaks to exposure,
+   distribution, metabolism, therapeutic window or efficacy in a patient.
+8. **The time split conflates chemistry with practice.** Compounds published
+   after the cutoff differ not only in structure but in which assay protocols
+   and research groups produced them. Its drop is an upper bound on the
+   purely chemical generalisation gap — and a fair estimate of the gap a real
+   project faces.
+9. **One split per strategy.** The bootstrap intervals quantify test-set
+   sampling error only.
+10. **No per-cell hyperparameter tuning**, deliberately. The absolute numbers
+    are honest defaults, not the best attainable.
+11. **A threshold is a modelling choice.** pChEMBL ≥ 6 is defensible and
+    stated, but for hERG in particular 1 µM block is a liability flag, not a
+    regulatory criterion.
+
+---
+
+## How this relates to the author's prior SUR1 work
+
+This project is the general, ligand-based, multi-target counterpart to
+**[sur1-antidiabetic-discovery](https://github.com/itsgichia/sur1-antidiabetic-discovery)**,
+which re-implements a single-target docking and QSAR workflow for the
+sulfonylurea receptor SUR1 (ChEMBL `CHEMBL2096972`, 63 compounds) and
+prepares AutoDock Vina runs against PDB `6BAA`.
+
+|  | SUR1 repository | this repository |
+| --- | --- | --- |
+| Targets | 1 (SUR1 / Kir6.2 complex) | 5 human targets |
+| Compounds | 63 | 32,540 |
+| Question | *which analogues of this scaffold should we dock?* | *how well do ligand-based models generalise, honestly measured?* |
+| Methods | RDKit descriptors, QSAR, virtual library, docking prep | 5 representations, 4 models, 3 split strategies, applicability domain, null models, screening metrics |
+| Structure used | yes — cryo-EM receptor, docking box | no — 2D ligand only |
+
+**The two explain each other.** The SUR1 repository reports a best
+cross-validated R² of 0.115 and says plainly that its models barely beat
+predicting the mean. This study shows that is the *expected* result rather
+than a failure of that pipeline: with 63 compounds spread over 32 scaffolds,
+a scaffold-aware evaluation asks the model to extrapolate to new chemistry
+from almost no examples of any one series — the hardest corner of the regime
+measured here, where even 11,000 compounds still leave R² at 0.39.
+
+**Where they would join up.** A real campaign uses both, in order, for
+different costs:
+
+1. **Rank cheaply, at scale** — a ligand-based model of the kind built here
+   scores millions of compounds for the price of a fingerprint. Its job is to
+   discard 99% of the library.
+2. **Decide what to trust** — the applicability domain from this repository
+   says which of those scores mean anything. Compounds far from the training
+   set get a prediction, but not a decision.
+3. **Dock the survivors** — structure-based scoring, as set up in the SUR1
+   repository, is too expensive for a library and too valuable to skip on a
+   shortlist. It earns its cost exactly where the ligand-based model is
+   weakest: novel scaffolds outside the applicability domain, where there is
+   no close analogue to learn from but there is still a binding site.
+4. **Then synthesise and assay.** Neither repository is evidence about a
+   molecule. Both are ways of deciding what to test first.
+
+---
+
+## How to run
+
+Requires **Python 3.12+**. Every dependency installs from pip wheels on
+macOS arm64, Linux x86-64 and Windows.
+
+```bash
+git clone https://github.com/itsgichia/ligand-activity-ml.git
+cd ligand-activity-ml
+
+python3.12 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+The cached datasets are committed, so the study runs **offline**:
+
+```bash
+# The full matrix: every table in results/ and every figure in figures/
+python scripts/run_study.py
+
+# A quick subset, for checking the pipeline works
+python scripts/run_study.py --fast
+
+# Subset anything
+python scripts/run_study.py --targets herg dpp4 --models linear random_forest
+python scripts/run_study.py --splits random scaffold --tasks classification
+python scripts/run_study.py --skip nulls space --permutations 5
+
+# Re-fetch live data from ChEMBL (overwrites data/, ~15 minutes)
+python -m ligandml.chembl --fetch-all
+python -m ligandml.chembl --list          # candidate targets and live counts
+
+# Tests
+pytest -q
+```
+
+**Runtime.** The committed run took **13.4 minutes** on an 8-core M-series
+laptop for 170 fitted cells (`results/run_summary.json` records it). Earlier
+runs of the identical matrix on a more heavily loaded machine took 15.3 and
+26.7 minutes, so treat 13–27 minutes as the range rather than 13 as a
+promise. About a third
+of it is the 20-permutation y-scrambling, which refits the random forest 100
+times: `--skip nulls` removes that, and `--fast` finishes in about 3
+minutes. A fresh clone adds roughly 4 minutes on the first run to compute
+the feature matrices, which are then cached in `data/features/` (gitignored,
+regenerated on demand).
+
+### Reproducibility
+
+Everything stochastic derives from one seed, `ligandml.RANDOM_STATE =
+20261121`, so re-running on the cached CSVs reproduces every number in this
+README exactly — checked by running the study end to end twice and comparing.
+`results/run_summary.json` records the seed, the matrix, the wall clock and
+the exact library versions.
+
+**One pin worth knowing about:** `requirements.txt` holds RDKit below
+2026.9. In rdkit 2026.09.2, `Chem.MurckoDecompose` raises
+`RuntimeError("bad any cast")` on *every* molecule, which silently removes
+the ability to compute Bemis–Murcko scaffolds and therefore the scaffold
+split — the core of this study. 2025.3.6 is the last release verified
+working here.
+
+### Tests
+
+`pytest -q` runs **370 tests** offline in well under a minute. They target the
+failures that would silently corrupt results rather than crash the pipeline:
+
+- **Cleaning** — censored rows dropped for every relation, pChEMBL
+  conversion against hand-computed values, ChEMBL's own `pchembl_value`
+  deliberately ignored, salts merged with their parents, deduplication
+  order-independent and idempotent, attrition table internally consistent.
+- **Scaffold-split integrity** — no scaffold group straddles the boundary,
+  across 32 combinations of seed and test size, *and* on the real datasets.
+- **Metric correctness** — enrichment factor against three hand-computed
+  fixtures plus its ceiling and tie-breaking behaviour, BEDROC bounded and
+  matching its own random expectation, and the identity
+  `EF_f = recall_f / f`.
+- **Applicability domain** — monotonicity on a synthetic case where error is
+  constructed linear in (1 − similarity), *plus a flat-error control* so the
+  test cannot pass by construction.
+- **Null models** — real signal is detected, and label-independent features
+  are correctly *not* called significant.
+- **Reproducibility** — identical results across repeated runs, scaffold and
+  time splits invariant to seed and to row order, and the committed result
+  tables checked for internal consistency against one another.
+
+### Layout
+
+```
+ligandml/
+  chembl.py       ChEMBL REST fetch, cleaning policy, attrition, cache (CLI)
+  featurise.py    RDKit 2D descriptors, Morgan/ECFP fingerprints, MACCS keys
+  splits.py       Random, Bemis-Murcko scaffold and publication-year splits
+  models.py       Linear, SVM, random forest, gradient boosting; both framings
+  evaluate.py     Regression, classification, EF, BEDROC, calibration, bootstrap
+  domain.py       Applicability domain by nearest-neighbour Tanimoto
+  nulls.py        Y-scrambling null models
+  plots.py        The figures, in one shared visual system
+scripts/run_study.py   The whole study, end to end
+tests/                 370 tests
+data/                  Cached ChEMBL CSVs + provenance JSON (committed)
+results/               12 result tables + run_summary.json
+figures/               11 figures
+```
+
+---
+
+## Author
+
+**Gichia Muiruri**
+
+- BSc (Hons) Pharmaceutical Chemistry — International Medical University, Malaysia
+- MSc Health Data Science — University of New South Wales, Sydney
+- LinkedIn: <https://www.linkedin.com/in/gichia-muiruri>
+- GitHub: <https://github.com/itsgichia>
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Gichia Muiruri.
+
+Bioactivity data are retrieved from **ChEMBL** (EMBL-EBI), released under
+CC BY-SA 3.0. Please cite ChEMBL directly if you use the cached datasets.

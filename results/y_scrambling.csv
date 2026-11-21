@@ -1,0 +1,6 @@
+target,model,representation,split,metric,observed,null_mean,null_std,null_min,null_max,n_permutations,p_value,z_score,seconds
+herg,random_forest,ecfp4_2048,scaffold,roc_auc,0.7925,0.48,0.0291,0.4188,0.5394,20,0.0476,10.7247,113.0
+d2,random_forest,ecfp4_2048,scaffold,roc_auc,0.8371,0.5215,0.032,0.4629,0.5674,20,0.0476,9.858,94.8
+ache,random_forest,ecfp4_2048,scaffold,roc_auc,0.8166,0.4987,0.0359,0.4293,0.5765,20,0.0476,8.8477,66.6
+dpp4,random_forest,ecfp4_2048,scaffold,roc_auc,0.8328,0.5265,0.0425,0.4415,0.5984,20,0.0476,7.2114,34.8
+adrb2,random_forest,ecfp4_2048,scaffold,roc_auc,0.8365,0.5184,0.0626,0.3565,0.612,20,0.0476,5.0782,17.4

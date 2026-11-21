@@ -1,0 +1,72 @@
+{
+  "seed": 20261121,
+  "activity_threshold": 6.0,
+  "test_size": 0.2,
+  "targets": [
+    {
+      "name": "herg",
+      "chembl_id": "CHEMBL240",
+      "n_compounds": 11034,
+      "active_rate": 0.2186
+    },
+    {
+      "name": "d2",
+      "chembl_id": "CHEMBL217",
+      "n_compounds": 9085,
+      "active_rate": 0.7756
+    },
+    {
+      "name": "ache",
+      "chembl_id": "CHEMBL220",
+      "n_compounds": 6000,
+      "active_rate": 0.5005
+    },
+    {
+      "name": "dpp4",
+      "chembl_id": "CHEMBL284",
+      "n_compounds": 4375,
+      "active_rate": 0.835
+    },
+    {
+      "name": "adrb2",
+      "chembl_id": "CHEMBL210",
+      "n_compounds": 2046,
+      "active_rate": 0.7424
+    }
+  ],
+  "representations": [
+    "rdkit2d",
+    "ecfp4_1024",
+    "ecfp4_2048",
+    "ecfp6_2048",
+    "maccs"
+  ],
+  "default_representation": "ecfp4_2048",
+  "models": [
+    "linear",
+    "svm",
+    "random_forest",
+    "gradient_boosting"
+  ],
+  "default_model": "random_forest",
+  "splits": [
+    "random",
+    "scaffold",
+    "time"
+  ],
+  "tasks": [
+    "regression",
+    "classification"
+  ],
+  "n_permutations": 20,
+  "n_cells_fitted": 170,
+  "wall_clock_seconds": 804.1,
+  "versions": {
+    "python": "3.12.2",
+    "numpy": "2.5.5",
+    "pandas": "3.1.1",
+    "scikit-learn": "1.9.1",
+    "rdkit": "2025.03.6",
+    "matplotlib": "3.11.2"
+  }
+}

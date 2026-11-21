@@ -1,0 +1,69 @@
+{
+  "target_chembl_id": "CHEMBL210",
+  "target_name": "adrb2",
+  "target_label": "Beta-2 adrenergic receptor (ADRB2)",
+  "fetch_date": "2026-11-21",
+  "n_raw_records": 3585,
+  "n_exact_records": 2729,
+  "n_compounds": 2046,
+  "pchembl_min": 3.844,
+  "pchembl_max": 10.97,
+  "pchembl_median": 7.3,
+  "n_assays": 2614,
+  "n_documents": 241,
+  "year_min": 1991,
+  "year_max": 2025,
+  "endpoint_counts": {
+    "EC50": 1088,
+    "IC50": 520,
+    "Ki": 438
+  },
+  "attrition": [
+    {
+      "step": "Raw activity records from the API",
+      "removed": 0,
+      "remaining": 3585
+    },
+    {
+      "step": "Dropped: missing SMILES or unparseable potency",
+      "removed": 52,
+      "remaining": 3533
+    },
+    {
+      "step": "Dropped: censored relation (>, <, >=, <=, ~)",
+      "removed": 484,
+      "remaining": 3049
+    },
+    {
+      "step": "Dropped: ChEMBL duplicate flag or data-validity comment",
+      "removed": 315,
+      "remaining": 2734
+    },
+    {
+      "step": "Dropped: potency outside 0.1 pM - 100 mM",
+      "removed": 0,
+      "remaining": 2734
+    },
+    {
+      "step": "Dropped: RDKit parse failure or outside size window",
+      "removed": 5,
+      "remaining": 2729
+    },
+    {
+      "step": "Exact measurements retained",
+      "removed": 0,
+      "remaining": 2729
+    },
+    {
+      "step": "Dropped: replicate measurements merged to median pChEMBL",
+      "removed": 683,
+      "remaining": 2046
+    },
+    {
+      "step": "Unique compounds in the modelling set",
+      "removed": 0,
+      "remaining": 2046
+    }
+  ],
+  "met_threshold": true
+}

@@ -1,0 +1,69 @@
+{
+  "target_chembl_id": "CHEMBL284",
+  "target_name": "dpp4",
+  "target_label": "Dipeptidyl peptidase 4 (DPP4)",
+  "fetch_date": "2026-11-21",
+  "n_raw_records": 6394,
+  "n_exact_records": 4902,
+  "n_compounds": 4375,
+  "pchembl_min": 4.0,
+  "pchembl_max": 10.097,
+  "pchembl_median": 7.244,
+  "n_assays": 4800,
+  "n_documents": 295,
+  "year_min": 1996,
+  "year_max": 2025,
+  "endpoint_counts": {
+    "IC50": 3883,
+    "Ki": 491,
+    "EC50": 1
+  },
+  "attrition": [
+    {
+      "step": "Raw activity records from the API",
+      "removed": 0,
+      "remaining": 6394
+    },
+    {
+      "step": "Dropped: missing SMILES or unparseable potency",
+      "removed": 9,
+      "remaining": 6385
+    },
+    {
+      "step": "Dropped: censored relation (>, <, >=, <=, ~)",
+      "removed": 825,
+      "remaining": 5560
+    },
+    {
+      "step": "Dropped: ChEMBL duplicate flag or data-validity comment",
+      "removed": 654,
+      "remaining": 4906
+    },
+    {
+      "step": "Dropped: potency outside 0.1 pM - 100 mM",
+      "removed": 0,
+      "remaining": 4906
+    },
+    {
+      "step": "Dropped: RDKit parse failure or outside size window",
+      "removed": 4,
+      "remaining": 4902
+    },
+    {
+      "step": "Exact measurements retained",
+      "removed": 0,
+      "remaining": 4902
+    },
+    {
+      "step": "Dropped: replicate measurements merged to median pChEMBL",
+      "removed": 527,
+      "remaining": 4375
+    },
+    {
+      "step": "Unique compounds in the modelling set",
+      "removed": 0,
+      "remaining": 4375
+    }
+  ],
+  "met_threshold": true
+}

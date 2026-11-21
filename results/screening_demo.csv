@@ -1,0 +1,6 @@
+target,model,representation,split,n_test,n_actives,active_rate,n_screened_1pct,hit_rate_1pct,recall_1pct,ef_1pct,ef_1pct_ci_low,ef_1pct_ci_high,bedroc_1pct,n_screened_5pct,hit_rate_5pct,recall_5pct,ef_5pct,ef_5pct_ci_low,ef_5pct_ci_high,bedroc_5pct,roc_auc,roc_auc_ci_low,roc_auc_ci_high,ece
+herg,random_forest,ecfp4_2048,scaffold,2207,501,0.227,22,0.9091,0.0399,4.005,3.401,4.56,0.9344,110,0.8455,0.1856,3.724,3.356,4.108,0.8332,0.7925,0.7675,0.8142,0.0321
+d2,random_forest,ecfp4_2048,scaffold,1817,1314,0.7232,18,1.0,0.0137,1.383,1.345,1.428,1.0,91,1.0,0.0693,1.383,1.334,1.423,0.9937,0.8371,0.8189,0.8575,0.046
+ache,random_forest,ecfp4_2048,scaffold,1200,628,0.5233,12,0.9167,0.0175,1.752,1.317,1.983,0.8744,60,0.9667,0.0924,1.847,1.753,1.971,0.9604,0.8166,0.7943,0.8386,0.0371
+dpp4,random_forest,ecfp4_2048,scaffold,875,721,0.824,9,1.0,0.0125,1.214,1.179,1.252,0.9994,44,0.9545,0.0583,1.158,1.074,1.231,0.9686,0.8328,0.7964,0.8694,0.0276
+adrb2,random_forest,ecfp4_2048,scaffold,409,249,0.6088,4,0.75,0.012,1.232,0.373,1.74,0.6747,20,0.95,0.0763,1.56,1.332,1.74,0.924,0.8365,0.7996,0.8681,0.099

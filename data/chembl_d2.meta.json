@@ -1,0 +1,69 @@
+{
+  "target_chembl_id": "CHEMBL217",
+  "target_name": "d2",
+  "target_label": "Dopamine D2 receptor (DRD2)",
+  "fetch_date": "2026-11-21",
+  "n_raw_records": 17328,
+  "n_exact_records": 12991,
+  "n_compounds": 9085,
+  "pchembl_min": 3.744,
+  "pchembl_max": 10.569,
+  "pchembl_median": 6.66,
+  "n_assays": 11933,
+  "n_documents": 861,
+  "year_min": 1987,
+  "year_max": 2025,
+  "endpoint_counts": {
+    "Ki": 7749,
+    "IC50": 751,
+    "EC50": 585
+  },
+  "attrition": [
+    {
+      "step": "Raw activity records from the API",
+      "removed": 0,
+      "remaining": 17328
+    },
+    {
+      "step": "Dropped: missing SMILES or unparseable potency",
+      "removed": 100,
+      "remaining": 17228
+    },
+    {
+      "step": "Dropped: censored relation (>, <, >=, <=, ~)",
+      "removed": 2500,
+      "remaining": 14728
+    },
+    {
+      "step": "Dropped: ChEMBL duplicate flag or data-validity comment",
+      "removed": 1530,
+      "remaining": 13198
+    },
+    {
+      "step": "Dropped: potency outside 0.1 pM - 100 mM",
+      "removed": 0,
+      "remaining": 13198
+    },
+    {
+      "step": "Dropped: RDKit parse failure or outside size window",
+      "removed": 207,
+      "remaining": 12991
+    },
+    {
+      "step": "Exact measurements retained",
+      "removed": 0,
+      "remaining": 12991
+    },
+    {
+      "step": "Dropped: replicate measurements merged to median pChEMBL",
+      "removed": 3906,
+      "remaining": 9085
+    },
+    {
+      "step": "Unique compounds in the modelling set",
+      "removed": 0,
+      "remaining": 9085
+    }
+  ],
+  "met_threshold": true
+}

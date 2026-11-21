@@ -1,0 +1,6 @@
+target,target_chembl_id,target_label,fetch_date,n_raw_records,n_exact_records,n_compounds,n_scaffolds,n_documents,pchembl_min,pchembl_median,pchembl_max,pchembl_sd,activity_threshold,n_active,active_rate,year_min,year_max,endpoint_counts
+herg,CHEMBL240,hERG potassium channel (KCNH2),2026-11-21,20080,12253,11034,5557,2480,4.0,5.3,10.68,0.89,6.0,2412,0.219,1995,2025,"{""IC50"": 9568, ""Ki"": 1274, ""EC50"": 192}"
+d2,CHEMBL217,Dopamine D2 receptor (DRD2),2026-11-21,17328,12991,9085,3750,861,3.74,6.66,10.57,1.02,6.0,7046,0.776,1987,2025,"{""Ki"": 7749, ""IC50"": 751, ""EC50"": 585}"
+ache,CHEMBL220,Acetylcholinesterase (ACHE),2026-11-21,9764,7123,6000,2563,709,4.0,6.0,10.96,1.28,6.0,3003,0.5,1986,2025,"{""IC50"": 5654, ""Ki"": 307, ""EC50"": 39}"
+dpp4,CHEMBL284,Dipeptidyl peptidase 4 (DPP4),2026-11-21,6394,4902,4375,1600,295,4.0,7.24,10.1,1.21,6.0,3653,0.835,1996,2025,"{""IC50"": 3883, ""Ki"": 491, ""EC50"": 1}"
+adrb2,CHEMBL210,Beta-2 adrenergic receptor (ADRB2),2026-11-21,3585,2729,2046,933,241,3.84,7.3,10.97,1.68,6.0,1519,0.742,1991,2025,"{""EC50"": 1088, ""IC50"": 520, ""Ki"": 438}"

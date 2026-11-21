@@ -1,0 +1,69 @@
+{
+  "target_chembl_id": "CHEMBL240",
+  "target_name": "herg",
+  "target_label": "hERG potassium channel (KCNH2)",
+  "fetch_date": "2026-11-21",
+  "n_raw_records": 20080,
+  "n_exact_records": 12253,
+  "n_compounds": 11034,
+  "pchembl_min": 4.0,
+  "pchembl_max": 10.678,
+  "pchembl_median": 5.3,
+  "n_assays": 11900,
+  "n_documents": 2480,
+  "year_min": 1995,
+  "year_max": 2025,
+  "endpoint_counts": {
+    "IC50": 9568,
+    "Ki": 1274,
+    "EC50": 192
+  },
+  "attrition": [
+    {
+      "step": "Raw activity records from the API",
+      "removed": 0,
+      "remaining": 20080
+    },
+    {
+      "step": "Dropped: missing SMILES or unparseable potency",
+      "removed": 7,
+      "remaining": 20073
+    },
+    {
+      "step": "Dropped: censored relation (>, <, >=, <=, ~)",
+      "removed": 6047,
+      "remaining": 14026
+    },
+    {
+      "step": "Dropped: ChEMBL duplicate flag or data-validity comment",
+      "removed": 1759,
+      "remaining": 12267
+    },
+    {
+      "step": "Dropped: potency outside 0.1 pM - 100 mM",
+      "removed": 0,
+      "remaining": 12267
+    },
+    {
+      "step": "Dropped: RDKit parse failure or outside size window",
+      "removed": 14,
+      "remaining": 12253
+    },
+    {
+      "step": "Exact measurements retained",
+      "removed": 0,
+      "remaining": 12253
+    },
+    {
+      "step": "Dropped: replicate measurements merged to median pChEMBL",
+      "removed": 1219,
+      "remaining": 11034
+    },
+    {
+      "step": "Unique compounds in the modelling set",
+      "removed": 0,
+      "remaining": 11034
+    }
+  ],
+  "met_threshold": true
+}
