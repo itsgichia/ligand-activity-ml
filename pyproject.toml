@@ -54,6 +54,10 @@ include = ["ligandml*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# test_reproducibility imports tests.conftest, which needs the repo root on
+# sys.path. A local editable install happens to provide it; a clean CI
+# checkout does not, so state it rather than rely on the environment.
+pythonpath = ["."]
 addopts = "-ra"
 filterwarnings = [
     "ignore::DeprecationWarning",
