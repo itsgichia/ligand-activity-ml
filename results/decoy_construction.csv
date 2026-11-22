@@ -1,6 +1,6 @@
-target,n_actives,n_decoys,requested_ratio,achieved_ratio,active_rate,ef_ceiling_1pct,property_bias,max_decoy_similarity,pool_exhausted
-herg,150,7350,49,49.0,0.02,50.0,0.1279,0.35,False
-d2,150,7350,49,49.0,0.02,50.0,0.2275,0.35,False
-ache,150,7350,49,49.0,0.02,50.0,0.2064,0.35,False
-dpp4,150,7350,49,49.0,0.02,50.0,0.7816,0.3494,False
-adrb2,150,7350,49,49.0,0.02,50.0,1.5132,0.3494,False
+target,n_actives,n_decoys,requested_ratio,achieved_ratio,active_rate,ef_ceiling_1pct,property_bias,max_decoy_similarity,pool_exhausted,n_actives_requested,n_actives_dropped,pool_size,pool_fraction_used,worst_property
+herg,148,5838,49,39.45,0.02472,40.45,0.3053,0.35,True,150,2,20661,0.2826,MolWt
+d2,150,6940,49,46.27,0.02116,47.27,0.2048,0.35,True,150,0,22610,0.3069,MolWt
+ache,140,5526,49,39.47,0.02471,40.47,0.3318,0.35,True,150,10,25695,0.2151,MolLogP
+dpp4,143,4830,49,33.78,0.02876,34.78,0.8658,0.3492,True,150,7,27320,0.1768,MolLogP
+adrb2,102,1890,49,18.53,0.0512,19.53,1.0588,0.3485,True,150,48,29649,0.0637,NumHDonors

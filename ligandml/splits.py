@@ -394,6 +394,66 @@ def make_split(
     return result
 
 
+def stratified_scaffold_split(
+    smiles: Sequence[str],
+    labels: np.ndarray,
+    test_size: float = DEFAULT_TEST_SIZE,
+) -> SplitResult:
+    """Scaffold-split each class separately, then pool the halves.
+
+    A plain scaffold split over a screening library fills training
+    largest-group-first, and in a decoy library the actives are
+    scaffold-clustered while the decoys are mostly singletons. The test
+    active rate therefore ends up wherever the group sizes put it, which
+    on this study's benchmarks was 5.6% against a 2% library.
+
+    That is not a cosmetic difference. Enrichment factor is bounded by
+    ``1 / active_rate`` *of the set it is computed on*, so a test set
+    three times as active as the library has a ceiling three times lower,
+    and the reported enrichment is no longer comparable to the library
+    the benchmark claims to represent.
+
+    Splitting within each class holds the test active rate at the
+    library's, while leaving the scaffold separation - the part that makes
+    the task hard and honest - intact inside each class.
+
+    Args:
+        smiles: SMILES for the whole library.
+        labels: Class label per compound; each distinct value is split on
+            its own scaffolds.
+        test_size: Target test fraction, applied within each class.
+
+    Returns:
+        The pooled split, with per-class scaffold counts in ``details``.
+
+    Raises:
+        ValueError: If ``labels`` does not align with ``smiles``, or there
+            is nothing to split.
+    """
+    labels = np.asarray(labels)
+    if len(labels) != len(smiles):
+        raise ValueError(
+            f"labels and smiles must align: {len(labels)} vs {len(smiles)}"
+        )
+    train_parts: list[np.ndarray] = []
+    test_parts: list[np.ndarray] = []
+    details: dict[str, Any] = {"stratified": True}
+    for value in np.unique(labels):
+        rows = np.flatnonzero(labels == value)
+        part = scaffold_split([smiles[i] for i in rows], test_size=test_size)
+        train_parts.append(rows[part.train_index])
+        test_parts.append(rows[part.test_index])
+        details[f"n_scaffolds_class_{value}"] = part.details.get("n_scaffolds")
+    if not train_parts:
+        raise ValueError("no compounds to split")
+    return SplitResult(
+        strategy="scaffold",
+        train_index=np.sort(np.concatenate(train_parts)),
+        test_index=np.sort(np.concatenate(test_parts)),
+        details=details,
+    )
+
+
 def scaffold_overlap(
     smiles: Sequence[str], split: SplitResult
 ) -> dict[str, float]:

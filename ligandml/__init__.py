@@ -13,7 +13,8 @@ project README traces back to one testable function:
     Molecular representations: RDKit 2D descriptors, Morgan/ECFP
     fingerprints and MACCS keys.
 ``splits``
-    Random, Bemis-Murcko scaffold and publication-year time splits.
+    Random, Bemis-Murcko scaffold and publication-year time splits,
+    including a class-stratified scaffold split for screening libraries.
 ``models``
     Regression and classification estimators with sensible defaults.
 ``evaluate``
@@ -28,7 +29,10 @@ project README traces back to one testable function:
     across repeated draws of the same split.
 ``decoys``
     Property-matched decoy libraries, so the screening metrics have room
-    to discriminate instead of sitting on their ceiling.
+    to discriminate instead of sitting on their ceiling - with a distance
+    cap and a per-property bias breakdown, because nearest-available
+    matching will happily return a decoy from the wrong region and report
+    nothing amiss.
 ``conformal``
     Prediction sets with a proved coverage guarantee, class-conditional
     so the promise holds for the actives and not just on average.

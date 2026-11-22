@@ -216,3 +216,174 @@ class TestCrossTargetPool:
     def test_unknown_target(self) -> None:
         with pytest.raises(KeyError, match="no frame for target"):
             decoys.cross_target_pool(self._frames(), "nope")
+
+
+class TestSignedBiasByProperty:
+    """The breakdown that names *which* property the matching failed on."""
+
+    def test_sign_follows_the_actives(self) -> None:
+        actives = np.array([[10.0], [10.0]])
+        decoys_ = np.array([[1.0], [1.0]])
+        bias = decoys.signed_bias_by_property(actives, decoys_, ["MolWt"])
+        assert bias["MolWt"] > 0
+        assert decoys.signed_bias_by_property(decoys_, actives, ["MolWt"])["MolWt"] < 0
+
+    def test_names_every_property(self) -> None:
+        block = np.array([[1.0, 2.0, 3.0]])
+        bias = decoys.signed_bias_by_property(block, block, ["a", "b", "c"])
+        assert set(bias) == {"a", "b", "c"}
+
+    def test_empty_group_gives_nothing(self) -> None:
+        assert decoys.signed_bias_by_property(np.empty((0, 1)), np.ones((2, 1))) == {}
+
+    def test_rejects_wrong_name_count(self) -> None:
+        with pytest.raises(ValueError, match="expected 2 names"):
+            decoys.signed_bias_by_property(np.ones((2, 2)), np.ones((2, 2)), ["only"])
+
+    def test_isolates_the_offending_property(self) -> None:
+        """One property far apart, one identical: only the first shows."""
+        actives = np.array([[0.0, 5.0], [1.0, 5.0]])
+        decoys_ = np.array([[9.0, 5.0], [10.0, 5.0]])
+        bias = decoys.signed_bias_by_property(actives, decoys_, ["far", "same"])
+        assert abs(bias["far"]) > 1.0
+        assert bias["same"] == pytest.approx(0.0)
+
+
+class TestDistanceCap:
+    """Refusing a match the pool cannot actually supply."""
+
+    def test_distant_candidate_is_refused(self) -> None:
+        actives = np.array([[0.0], [0.0]])
+        pool = np.array([[0.0], [50.0]])
+        match = decoys.match_decoys(
+            actives, pool, np.zeros(2), ratio=1, max_distance=0.5
+        )
+        assert match.indices.tolist() == [0]
+        assert match.counts.tolist() == [1, 0]
+
+    def test_without_a_cap_the_distant_one_is_taken(self) -> None:
+        actives = np.array([[0.0], [0.0]])
+        pool = np.array([[0.0], [50.0]])
+        match = decoys.match_decoys(actives, pool, np.zeros(2), ratio=1)
+        assert sorted(match.indices.tolist()) == [0, 1]
+
+    def test_owner_attributes_each_decoy(self) -> None:
+        actives = np.array([[0.0], [100.0]])
+        pool = np.array([[0.1], [100.1]])
+        match = decoys.match_decoys(actives, pool, np.zeros(2), ratio=1)
+        assert len(match.owner) == len(match.indices)
+        assert sorted(match.owner.tolist()) == [0, 1]
+
+    def test_counts_never_exceed_the_ratio(self) -> None:
+        actives = np.array([[0.0], [0.1]])
+        pool = np.array([[0.0], [0.1], [0.2], [0.3], [0.4]])
+        match = decoys.match_decoys(actives, pool, np.zeros(5), ratio=2)
+        assert match.counts.tolist() == [2, 2]
+
+    def test_select_decoys_still_returns_bare_indices(self) -> None:
+        picked = decoys.select_decoys(
+            np.array([[0.0]]), np.array([[0.1], [0.2]]), np.zeros(2), ratio=2
+        )
+        assert isinstance(picked, np.ndarray)
+        assert picked.size == 2
+
+
+class TestDroppingUnmatchableActives:
+    """An active the pool cannot disguise is removed, not given a free pass."""
+
+    def _build(self, max_distance=None):
+        # Two actives in one region, one far outlier the pool cannot match.
+        active_props = np.array([[0.0], [0.2], [500.0]])
+        pool_props = np.array([[0.0], [0.1], [0.2], [0.3]])
+        return decoys.build_decoy_set(
+            "herg",
+            ["A0", "A1", "OUTLIER"],
+            active_props,
+            ["D0", "D1", "D2", "D3"],
+            pool_props,
+            np.zeros(4),
+            ratio=1,
+            max_distance=max_distance,
+        )
+
+    def test_outlier_is_dropped_under_a_cap(self) -> None:
+        built = self._build(max_distance=0.5)
+        assert built.n_actives == 2
+        assert built.n_actives_requested == 3
+        assert built.n_actives_dropped == 1
+        assert "OUTLIER" not in built.smiles
+
+    def test_outlier_survives_without_a_cap(self) -> None:
+        built = self._build()
+        assert built.n_actives == 3
+        assert built.n_actives_dropped == 0
+
+    def test_dropping_takes_the_decoys_with_it(self) -> None:
+        """A dropped active must not leave its decoys behind."""
+        built = self._build(max_distance=0.5)
+        assert built.n_decoys == 2
+        assert len(built.smiles) == built.n_actives + built.n_decoys
+        assert len(built.labels) == len(built.smiles)
+
+    def test_labels_still_line_up_after_dropping(self) -> None:
+        built = self._build(max_distance=0.5)
+        assert built.labels[: built.n_actives].sum() == built.n_actives
+        assert built.labels[built.n_actives :].sum() == 0
+
+    def test_min_decoys_per_active_drops_the_underserved(self) -> None:
+        built = decoys.build_decoy_set(
+            "herg",
+            ["A0", "A1"],
+            np.array([[0.0], [0.2]]),
+            ["D0"],
+            np.array([[0.1]]),
+            np.zeros(1),
+            ratio=1,
+            min_decoys_per_active=1,
+        )
+        # Only one candidate exists, so only one active can be served.
+        assert built.n_actives == 1
+        assert built.n_actives_dropped == 1
+
+    def test_dropping_improves_the_reported_bias(self) -> None:
+        """The cap exists to make this number honest, so check it moves."""
+        assert self._build(max_distance=0.5).property_bias < self._build().property_bias
+
+
+class TestPoolDiagnostics:
+    """Reporting how much room the matcher actually had."""
+
+    def test_pool_fraction_used(self) -> None:
+        built = decoys.build_decoy_set(
+            "herg",
+            ["A"],
+            np.array([[0.0]]),
+            [f"D{i}" for i in range(10)],
+            np.arange(10.0).reshape(-1, 1),
+            np.zeros(10),
+            ratio=5,
+        )
+        assert built.pool_size == 10
+        assert built.pool_fraction_used == pytest.approx(0.5)
+
+    def test_empty_pool_fraction_is_zero(self) -> None:
+        built = decoys.build_decoy_set(
+            "herg", ["A"], np.array([[0.0]]), [], np.empty((0, 1)), np.zeros(0)
+        )
+        assert built.pool_fraction_used == 0.0
+
+    def test_row_names_the_worst_property(self) -> None:
+        actives = np.array([[0.0, 0.0], [0.0, 1.0]])
+        pool = np.array([[9.0, 0.0], [9.5, 1.0]])
+        row = decoys.build_decoy_set(
+            "herg",
+            ["A0", "A1"],
+            actives,
+            ["D0", "D1"],
+            pool,
+            np.zeros(2),
+            ratio=1,
+            property_names=["heavy", "light"],
+        ).as_row()
+        assert row["worst_property"] == "heavy"
+        assert row["pool_size"] == 2

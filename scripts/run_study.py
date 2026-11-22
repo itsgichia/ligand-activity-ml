@@ -414,6 +414,7 @@ def run_decoy_screen(
     seed: int,
     model_name: str,
     results_dir: Path,
+    max_distance: float | None = decoys.MAX_MATCH_DISTANCE,
 ) -> pd.DataFrame:
     """Score the models on a screening library instead of a measured set.
 
@@ -421,6 +422,16 @@ def run_decoy_screen(
     at 1.2-1.9 and leaves the screening section unable to say anything. A
     decoy library puts the active rate where a real screen has it, so the
     same metric has room to discriminate.
+
+    Three things here exist to stop the new benchmark flattering the
+    model. The split is stratified, so the test set carries the library's
+    active rate and the ceiling in the test set is the one the library
+    advertises. Matching is distance-capped, so an active the pool cannot
+    disguise is dropped rather than handed a decoy from a different
+    region. And every benchmark is scored a second time by a model given
+    *only* the six matched properties: if six numbers already rank the
+    library, the enrichment on offer is an artefact of construction and
+    not a finding about the model.
 
     Args:
         data: The loaded targets.
@@ -430,6 +441,8 @@ def run_decoy_screen(
         seed: Seed for the active sample and the model.
         model_name: Model to score.
         results_dir: Directory for the CSV outputs.
+        max_distance: Furthest acceptable property match, or ``None`` to
+            take the nearest candidate however far away it is.
 
     Returns:
         One row per target.
@@ -437,6 +450,7 @@ def run_decoy_screen(
     frames = {item.spec.name: item.frame for item in data}
     rng = np.random.default_rng(seed)
     construction: list[dict[str, Any]] = []
+    bias_rows: list[dict[str, Any]] = []
     scored: list[dict[str, Any]] = []
 
     for item in data:
@@ -479,37 +493,79 @@ def run_decoy_screen(
             pool_props,
             similarity,
             ratio=ratio,
+            max_distance=max_distance,
         )
         construction.append(built.as_row())
+        for property_name, value in built.bias_by_property:
+            bias_rows.append(
+                {
+                    "target": name,
+                    "property": property_name,
+                    "standardised_difference": round(value, 4),
+                }
+            )
         LOGGER.info(
-            "  %s: %d actives + %d decoys, %.2f%% active, "
-            "EF ceiling %.0f, property bias %.3f",
+            "  %s: %d actives + %d decoys (%d actives dropped, %.1f%% of pool "
+            "used), %.2f%% active, EF ceiling %.0f, property bias %.3f",
             name,
             built.n_actives,
             built.n_decoys,
+            built.n_actives_dropped,
+            100.0 * built.pool_fraction_used,
             100.0 * built.active_rate,
             built.enrichment_ceiling_1pct,
             built.property_bias,
         )
+        if built.n_actives == 0:
+            LOGGER.warning("  %s: no active survived matching, skipping", name)
+            continue
 
         # Score it exactly as the measured benchmark is scored.
         mols, ok = featurise.mols_from_smiles(list(built.smiles))
         matrix, _ = featurise.morgan_fingerprints(mols)
         labels = built.labels[ok]
-        frame = pd.DataFrame({"canonical_smiles": [s for s, k in zip(built.smiles, ok) if k]})
-        split = splits.scaffold_split(
-            frame["canonical_smiles"].tolist(), test_size=test_size
-        )
-        split.validate(len(frame))
-        prediction = models.fit_predict(
-            models.build_model(model_name, "classification", "fingerprint", seed=seed),
-            matrix[split.train_index],
-            labels[split.train_index],
-            matrix[split.test_index],
-            "classification",
-        )
+        kept_smiles = [s for s, k in zip(built.smiles, ok) if k]
+        # Scaffold-split the actives and the decoys separately, then pool
+        # the halves. A single split over the whole library hands the test
+        # set whatever active rate the scaffold sizes happen to produce -
+        # it came out at 5.6% against a 2% library, which quietly lowered
+        # the enrichment ceiling the result was then measured against.
+        split = splits.stratified_scaffold_split(kept_smiles, labels, test_size)
+        split.validate(len(kept_smiles))
         observed = labels[split.test_index]
-        metrics = evaluate.classification_metrics(observed, prediction)
+        metrics = evaluate.classification_metrics(
+            observed,
+            models.fit_predict(
+                models.build_model(
+                    model_name, "classification", "fingerprint", seed=seed
+                ),
+                matrix[split.train_index],
+                labels[split.train_index],
+                matrix[split.test_index],
+                "classification",
+            ),
+        )
+
+        # The control: the same split, scored from the six matched
+        # properties alone. Whatever it achieves is available without any
+        # structural information and is therefore not evidence about the
+        # model.
+        # ``mols`` already omits the unparseable rows, matching ``labels``.
+        control_props, _ = featurise.rdkit_descriptors(
+            mols, names=decoys.MATCH_PROPERTIES
+        )
+        control = evaluate.classification_metrics(
+            observed,
+            models.fit_predict(
+                models.build_model(
+                    model_name, "classification", "descriptors", seed=seed
+                ),
+                control_props[split.train_index],
+                labels[split.train_index],
+                control_props[split.test_index],
+                "classification",
+            ),
+        )
         scored.append(
             {
                 "target": name,
@@ -533,22 +589,36 @@ def run_decoy_screen(
                         "ef_ceiling_5pct",
                     )
                 },
+                "property_only_roc_auc": round(float(control["roc_auc"]), 4),
+                "property_only_ef_1pct": round(float(control["ef_1pct"]), 4),
+                "ef_1pct_over_property_only": round(
+                    float(metrics["ef_1pct"]) - float(control["ef_1pct"]), 4
+                ),
             }
         )
         LOGGER.info(
-            "  %s: AUC %.3f, EF@1%% %.1f of %.0f",
+            "  %s: AUC %.3f, EF@1%% %.1f of %.0f "
+            "(properties alone: AUC %.3f, EF@1%% %.1f)",
             name,
             scored[-1].get("roc_auc", float("nan")),
             scored[-1].get("ef_1pct", float("nan")),
             scored[-1].get("ef_ceiling_1pct", float("nan")),
+            scored[-1].get("property_only_roc_auc", float("nan")),
+            scored[-1].get("property_only_ef_1pct", float("nan")),
         )
 
     pd.DataFrame(construction).to_csv(
         results_dir / "decoy_construction.csv", index=False
     )
+    pd.DataFrame(bias_rows).to_csv(
+        results_dir / "decoy_property_bias.csv", index=False
+    )
     frame = pd.DataFrame(scored)
     frame.to_csv(results_dir / "decoy_screen.csv", index=False)
-    LOGGER.info("wrote decoy_construction.csv and decoy_screen.csv")
+    LOGGER.info(
+        "wrote decoy_construction.csv, decoy_property_bias.csv and "
+        "decoy_screen.csv"
+    )
     return frame
 
 
@@ -1645,6 +1715,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="decoys attached per active",
     )
     parser.add_argument(
+        "--decoy-max-distance", type=float, default=decoys.MAX_MATCH_DISTANCE,
+        help=(
+            "furthest acceptable property match, in standardised units; "
+            "an active with no candidate this close is dropped. Pass 0 to "
+            "accept the nearest candidate however far away it is "
+            f"(default: {decoys.MAX_MATCH_DISTANCE})"
+        ),
+    )
+    parser.add_argument(
         "--calibration-fraction", type=float, default=0.25,
         help="share of training held out to calibrate the conformal predictor",
     )
@@ -1756,6 +1835,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         run_decoy_screen(
             data, args.decoy_actives, args.decoy_ratio, args.test_size,
             args.seed, default_model, args.results_dir,
+            max_distance=args.decoy_max_distance or None,
         )
 
     if "conformal" not in args.skip and "classification" in tasks:

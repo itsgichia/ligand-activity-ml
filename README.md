@@ -384,59 +384,102 @@ with 20 permutations, not a borderline result. **The models have learned
 real structure–activity relationships — the scaffold-split numbers are the
 honest size of what they learned, not an absence of signal.**
 
-### 8. A screening library, and why its decoys are too easy
+### 8. A screening library, and the control that says whether to believe it
 
 §5 could not say much, because a benchmark that is 50–83% active caps
 enrichment at 1.2–1.9. So this section builds the other situation: 150
-measured actives per target, surrounded by **49 property-matched decoys
-each** drawn from the compounds measured against the *other four* targets
-and absent from this one. Decoys are matched on molecular weight, logP,
-donors, acceptors, rotatable bonds and TPSA — the bulk properties a model
-could otherwise exploit instead of learning pharmacology — and anything
-above 0.35 Tanimoto to an active is refused as a possible analogue.
+measured actives per target, surrounded by **up to 49 property-matched
+decoys each** drawn from the compounds measured against the *other four*
+targets and absent from this one. Decoys are matched on molecular weight,
+logP, donors, acceptors, rotatable bonds and TPSA — the bulk properties a
+model could otherwise exploit instead of learning pharmacology — and
+anything above 0.35 Tanimoto to an active is refused as a possible
+analogue.
 
-That takes the library to **2% active** and the enrichment ceiling from
-1.2 to **50** (`results/decoy_construction.csv`). Scored on a scaffold
-split exactly as the measured benchmark is (`results/decoy_screen.csv`):
+Three things in that construction exist because the first version of it
+produced a benchmark that looked well built and was not.
 
-| Target | test active rate | ROC AUC | EF@1% | ceiling | hit rate @1% | property bias |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| hERG | 5.6% | 0.878 | 17.9 | 17.9 | **1.00** | 0.13 |
-| D2 | 6.4% | 0.917 | 15.6 | 15.6 | **1.00** | 0.23 |
-| AChE | 3.6% | 0.938 | 27.8 | 27.8 | **1.00** | 0.21 |
-| DPP-4 | 2.3% | 0.967 | 41.2 | 44.1 | 0.93 | **0.78** |
-| β2-adrenergic | 3.6% | 0.960 | 27.8 | 27.8 | **1.00** | **1.51** |
+**Matching is distance-capped.** Nearest-available matching always
+succeeds: when the pool holds nothing resembling an active, it returns
+the least bad compound and the summary reports a full decoy set. An
+active with no candidate within 1.0 standardised units is now dropped and
+counted (`--decoy-max-distance`), which turns a hidden mismatch into a
+visible shortfall.
 
-**This did not work, and the way it failed is the result.** Enrichment is
-no longer pinned at 1.2 because the ceiling was low — it is pinned at
-17.9, 15.6, 27.8 and 27.8 because the model gets *every compound in the
-top 1% right*. A hit rate of exactly 1.00 is not a measurement; it is the
-benchmark being too easy to measure anything.
+**The split is stratified by class.** A plain scaffold split over the
+whole library fills training largest-group-first, and because actives are
+scaffold-clustered while decoys are mostly singletons, the test active
+rate landed at 5.6% against a 2% library. Enrichment factor is bounded by
+`1 / active_rate` *of the set it is computed on*, so that quietly lowered
+the ceiling the result was measured against: the previous version of this
+section reported "EF 17.9 of 17.9" when the library it claimed to
+represent had a ceiling of 50. `splits.stratified_scaffold_split` splits
+each class on its own scaffolds, which holds the test rate at the
+library's and keeps the scaffold separation inside each class.
 
-This is **artificial enrichment**, the failure DUD-E itself is best known
-for. Decoys drawn from other targets and filtered to be topologically
-dissimilar are separable from the actives on gross structure, so the model
-distinguishes *compounds made for this target* from *compounds made for a
-different one*, which is a much easier question than the one a screen
-asks. Matching bulk properties removes the crudest shortcut and does not
-remove this one.
+**Every benchmark is scored twice.** The second model gets *only the six
+matched properties* and no structural information at all. Whatever it
+achieves is available without any pharmacology, so it is the measurement
+of artificial enrichment rather than an argument about it.
 
-The construction summary also says two of the five benchmarks are badly
-built regardless. **Property bias** is the largest standardised difference
-between the active and decoy means; below about 0.1 the two groups are
-indistinguishable on those properties. hERG, D2 and AChE come in at
-0.13–0.23. DPP-4 reaches 0.78 and β2 reaches **1.51** — a decoy set a
-model can partly solve on size and lipophilicity alone. The cross-target
-pool simply does not contain enough chemistry resembling those two
-targets' actives. Their AUCs should be read as upper bounds, and that is
-why the column is printed beside them rather than kept in a notebook.
+What the construction costs (`results/decoy_construction.csv`):
 
-So the measured benchmark in §5 and the decoy benchmark here fail in
-*opposite* directions, and neither is the number to quote. The measured
-one is too hard to show enrichment (the ceiling is at the floor); this one
-is too easy (the model sits on the ceiling). A real answer needs decoys
-from a diverse vendor library that nobody has tested against anything —
-which is available, and is the first thing I would add next.
+| Target | actives kept | dropped | decoys | ratio | active rate | ceiling | worst property | bias |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |
+| hERG | 148 | 2 | 5,838 | 39.5 | 2.47% | 40.5 | MolWt | 0.31 |
+| D2 | 150 | 0 | 6,940 | 46.3 | 2.12% | 47.3 | MolWt | 0.20 |
+| AChE | 140 | 10 | 5,526 | 39.5 | 2.47% | 40.5 | MolLogP | 0.33 |
+| DPP-4 | 143 | 7 | 4,830 | 33.8 | 2.88% | 34.8 | MolLogP | **0.87** |
+| β2-adrenergic | 102 | **48** | 1,890 | 18.5 | 5.12% | 19.5 | NumHDonors | **1.06** |
+
+And what the screen says (`results/decoy_screen.csv`), with the
+property-only control beside each row:
+
+| Target | test active rate | ROC AUC | EF@1% | ceiling | hit rate @1% | control AUC | control EF@1% |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| hERG | 2.50% | 0.921 | 29.9 | 39.9 | 0.75 | 0.489 | 0.0 |
+| D2 | 2.12% | 0.922 | 33.8 | 47.3 | 0.71 | 0.455 | 3.4 |
+| AChE | 2.47% | 0.949 | 40.5 | 40.5 | **1.00** | 0.598 | 0.0 |
+| DPP-4 | 2.92% | 0.954 | 34.3 | 34.3 | **1.00** | 0.540 | 0.0 |
+| β2-adrenergic | 5.03% | 0.902 | 19.9 | 19.9 | **1.00** | **0.669** | **14.9** |
+
+**The control is the finding.** On four of the five targets a model given
+the six matched properties scores **0.455 to 0.598 AUC** — chance — and
+an enrichment factor of essentially zero. Those six numbers carry no
+usable signal, so the enrichment the fingerprint model achieves is not
+the property artefact that the earlier version of this section assumed it
+was. The matching worked, and the control is what establishes that;
+inspecting the bias column could only ever have suggested it.
+
+**On β2 the control fails, and that benchmark should not be quoted.** Six
+properties reach 0.669 AUC and EF 14.9 against a ceiling of 19.9 — about
+three quarters of the achievable enrichment with no structural
+information whatsoever. The cause is in the breakdown
+(`results/decoy_property_bias.csv`): β2 actives carry a standardised
+**+1.06 on hydrogen-bond donors**. Beta-2 agonists are catecholamine-like
+and the cross-target pool contains almost nothing with four or five
+donors, which is also why the distance cap had to discard 48 of the 150
+actives and why its ceiling fell from 50 to 19.5. No amount of
+re-matching fixes that; a different pool is the only fix.
+
+Two further honest costs. The distance cap **helps where the pool fits
+badly and mildly hurts where it fits well**: on β2 it improves every
+absolute property difference, while on hERG the aggregate bias rises from
+0.12 to 0.31, because actives in sparse regions keep full weight in the
+active mean while contributing fewer decoys. That rise is visible and
+tolerated, because the control — AUC 0.489 — shows it did not make the
+benchmark exploitable. It is also why the control, not the bias column,
+is the diagnostic to read. And **three of five benchmarks still sit on
+the ceiling** with a hit rate of 1.00; only hERG and D2 now show genuine
+headroom, at 0.75 and 0.71.
+
+So §5 and §8 still fail in opposite directions, and neither EF is the
+number to quote on its own. The measured benchmark is too hard to show
+enrichment; this one is too easy on three targets and property-biased on
+one. What is now settled is *which* kind of failure each is, and on hERG
+and D2 the enrichment survives a control that would have exposed it. The
+remaining fix is unchanged: decoys from a diverse vendor library nobody
+has tested against anything.
 
 ### 9. Conformal prediction: coverage you can hold the model to
 
@@ -651,16 +694,19 @@ Read every number above with these in mind.
 2. **ChEMBL is a biased sample of chemistry**, as the 50–83% active rates
    show. The enrichment factors characterise the ranking on *this* test set;
    they are not the yield of a campaign against a real library.
-3. **Decoys are presumed inactive, and too easy.** §8 adds a 2%-active
-   decoy library, but its decoys come from the other targets in the study:
-   a compound tested against D2 and never against hERG is *probably* not a
-   hERG blocker, and nobody checked. Worse, the model clears the top 1% of
-   that library perfectly on four of five targets, so the benchmark is too
-   easy to measure anything, and on DPP-4 and β2 the decoys are not even
-   well property-matched. Real decoys from an untested vendor library are
-   the fix. The measured benchmark in §5 has the opposite problem: its
-   inactives are chemically close to its actives because somebody made them
-   in the same series.
+3. **Decoys are presumed inactive, and on three targets still too easy.**
+   §8 builds a 2%-active decoy library, but its decoys come from the other
+   targets in the study: a compound tested against D2 and never against
+   hERG is *probably* not a hERG blocker, and nobody checked. The
+   property-only control clears four of the five benchmarks — six bulk
+   properties score at chance — so the enrichment there is not a property
+   artefact. But the model still clears the top 1% perfectly on AChE,
+   DPP-4 and β2, and on **β2 the control reaches 0.669 AUC and EF 14.9 of
+   a 19.9 ceiling**, so that benchmark is exploitable without any
+   pharmacology and should not be quoted. Decoys from an untested vendor
+   library are the fix. The measured benchmark in §5 has the opposite
+   problem: its inactives are chemically close to its actives because
+   somebody made them in the same series.
 4. **Activity cliffs.** A single atom can cost two log units of potency.
    Methods built on 2D similarity cannot see that, and scaffold splits land
    the model squarely where it happens.
@@ -830,19 +876,19 @@ failures that would silently corrupt results rather than crash the pipeline:
 ligandml/
   chembl.py       ChEMBL REST fetch, cleaning policy, attrition, cache (CLI)
   featurise.py    RDKit 2D descriptors, Morgan/ECFP fingerprints, MACCS keys
-  splits.py       Random, Bemis-Murcko scaffold and publication-year splits
+  splits.py       Random, scaffold, time, and class-stratified scaffold splits
   models.py       Linear, SVM, random forest, gradient boosting; both framings
   evaluate.py     Regression, classification, EF, BEDROC, calibration, bootstrap
   domain.py       Applicability domain by nearest-neighbour Tanimoto
   nulls.py        Y-scrambling null models
   uncertainty.py  Spread on the split-gap estimate
-  decoys.py       Property-matched decoy libraries
+  decoys.py       Property-matched decoy libraries, distance-capped
   conformal.py    Prediction sets with a coverage guarantee
   plots.py        The figures, in one shared visual system
 scripts/run_study.py   The whole study, end to end
-tests/                 370 tests
+tests/                 471 tests
 data/                  Cached ChEMBL CSVs + provenance JSON (committed)
-results/               12 result tables + run_summary.json
+results/               20 result tables + run_summary.json
 figures/               11 figures
 ```
 

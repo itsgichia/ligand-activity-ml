@@ -1,6 +1,6 @@
-target,model,benchmark,n_test,active_rate,roc_auc,pr_auc,ef_1pct,ef_ceiling_1pct,bedroc_1pct,hit_rate_1pct,recall_1pct,ef_5pct,ef_ceiling_5pct
-herg,random_forest,decoy_library,1500,0.056,0.8781,0.4895,17.8571,17.8571,0.923,1.0,0.1786,8.5714,17.8571
-d2,random_forest,decoy_library,1500,0.064,0.9165,0.6614,15.625,15.625,0.988,1.0,0.1562,10.4167,15.625
-ache,random_forest,decoy_library,1500,0.036,0.9383,0.7467,27.7778,27.7778,0.955,1.0,0.2778,14.8148,20.0
-dpp4,random_forest,decoy_library,1500,0.02267,0.9673,0.8789,41.1765,44.1176,0.9621,0.9333,0.4118,18.2353,20.0
-adrb2,random_forest,decoy_library,1500,0.036,0.9597,0.8354,27.7778,27.7778,0.9905,1.0,0.2778,15.9259,20.0
+target,model,benchmark,n_test,active_rate,roc_auc,pr_auc,ef_1pct,ef_ceiling_1pct,bedroc_1pct,hit_rate_1pct,recall_1pct,ef_5pct,ef_ceiling_5pct,property_only_roc_auc,property_only_ef_1pct,ef_1pct_over_property_only
+herg,random_forest,decoy_library,1198,0.02504,0.9206,0.464,29.95,39.9333,0.7391,0.75,0.3,10.6489,20.0,0.4895,0.0,29.95
+d2,random_forest,decoy_library,1418,0.02116,0.9225,0.4967,33.7619,47.2667,0.7316,0.7143,0.3333,11.3174,20.0,0.4549,3.3762,30.3857
+ache,random_forest,decoy_library,1133,0.02471,0.949,0.6925,40.4643,40.4643,0.9009,1.0,0.3929,14.198,20.0,0.5984,0.0,40.4643
+dpp4,random_forest,decoy_library,995,0.02915,0.9541,0.9258,34.3103,34.3103,0.9948,1.0,0.3448,18.5276,20.0,0.5398,0.0,34.3103
+adrb2,random_forest,decoy_library,398,0.05025,0.9021,0.8018,19.9,19.9,0.998,1.0,0.2,14.925,19.9,0.6694,14.925,4.975
