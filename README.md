@@ -170,6 +170,28 @@ left out something worth about 0.04 of ROC AUC. The headline number in
 this README is the largest-first construction, the harder and more
 conservative of the two.
 
+**Across cutoff years** (`results/time_cutoff_sensitivity.csv`). The time
+split has no seed — the cutoff determines it — so its counterpart to a
+re-draw is moving the line. If the gap only appears at one cutoff it is an
+artefact of that choice. Three cutoffs per target, holding out roughly
+15%, 20% and 25%:
+
+| Target | gap at each cutoff | verdict |
+| --- | --- | --- |
+| hERG | +0.222, +0.178, +0.218 | holds |
+| D2 | +0.116, +0.175 | holds |
+| AChE | +0.184, +0.210 | holds |
+| DPP-4 | +0.190, +0.122, +0.147 | holds |
+| β2-adrenergic | −0.021, −0.004, +0.009 | **absent at every cutoff** |
+
+The time gap is not an artefact of the cutoff: it survives on four of five
+targets wherever the line is drawn, between 0.12 and 0.22. And β2's
+exception is not an artefact either — it is absent at all three cutoffs,
+as it was across five re-drawn scaffold splits. Three independent ways of
+perturbing that target agree that splitting genuinely costs it nothing,
+which is a firmer statement than "one odd split" and a more interesting
+one.
+
 ### 2. Why: a random split leaks most of the test set
 
 ![Scaffold leakage by split](figures/split_leakage.png)
@@ -362,6 +384,118 @@ with 20 permutations, not a borderline result. **The models have learned
 real structure–activity relationships — the scaffold-split numbers are the
 honest size of what they learned, not an absence of signal.**
 
+### 8. A screening library, and why its decoys are too easy
+
+§5 could not say much, because a benchmark that is 50–83% active caps
+enrichment at 1.2–1.9. So this section builds the other situation: 150
+measured actives per target, surrounded by **49 property-matched decoys
+each** drawn from the compounds measured against the *other four* targets
+and absent from this one. Decoys are matched on molecular weight, logP,
+donors, acceptors, rotatable bonds and TPSA — the bulk properties a model
+could otherwise exploit instead of learning pharmacology — and anything
+above 0.35 Tanimoto to an active is refused as a possible analogue.
+
+That takes the library to **2% active** and the enrichment ceiling from
+1.2 to **50** (`results/decoy_construction.csv`). Scored on a scaffold
+split exactly as the measured benchmark is (`results/decoy_screen.csv`):
+
+| Target | test active rate | ROC AUC | EF@1% | ceiling | hit rate @1% | property bias |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| hERG | 5.6% | 0.878 | 17.9 | 17.9 | **1.00** | 0.13 |
+| D2 | 6.4% | 0.917 | 15.6 | 15.6 | **1.00** | 0.23 |
+| AChE | 3.6% | 0.938 | 27.8 | 27.8 | **1.00** | 0.21 |
+| DPP-4 | 2.3% | 0.967 | 41.2 | 44.1 | 0.93 | **0.78** |
+| β2-adrenergic | 3.6% | 0.960 | 27.8 | 27.8 | **1.00** | **1.51** |
+
+**This did not work, and the way it failed is the result.** Enrichment is
+no longer pinned at 1.2 because the ceiling was low — it is pinned at
+17.9, 15.6, 27.8 and 27.8 because the model gets *every compound in the
+top 1% right*. A hit rate of exactly 1.00 is not a measurement; it is the
+benchmark being too easy to measure anything.
+
+This is **artificial enrichment**, the failure DUD-E itself is best known
+for. Decoys drawn from other targets and filtered to be topologically
+dissimilar are separable from the actives on gross structure, so the model
+distinguishes *compounds made for this target* from *compounds made for a
+different one*, which is a much easier question than the one a screen
+asks. Matching bulk properties removes the crudest shortcut and does not
+remove this one.
+
+The construction summary also says two of the five benchmarks are badly
+built regardless. **Property bias** is the largest standardised difference
+between the active and decoy means; below about 0.1 the two groups are
+indistinguishable on those properties. hERG, D2 and AChE come in at
+0.13–0.23. DPP-4 reaches 0.78 and β2 reaches **1.51** — a decoy set a
+model can partly solve on size and lipophilicity alone. The cross-target
+pool simply does not contain enough chemistry resembling those two
+targets' actives. Their AUCs should be read as upper bounds, and that is
+why the column is printed beside them rather than kept in a notebook.
+
+So the measured benchmark in §5 and the decoy benchmark here fail in
+*opposite* directions, and neither is the number to quote. The measured
+one is too hard to show enrichment (the ceiling is at the floor); this one
+is too easy (the model sits on the ceiling). A real answer needs decoys
+from a diverse vendor library that nobody has tested against anything —
+which is available, and is the first thing I would add next.
+
+### 9. Conformal prediction: coverage you can hold the model to
+
+Ranking invites the question *how far down do I read?*. Conformal
+prediction answers it. Holding out 25% of the training set for
+calibration, each test compound gets a **prediction set** with a proved
+property: under exchangeability the true label is inside it at least
+`1 - ε` of the time, whatever the underlying model. Calibration is
+class-conditional (Mondrian), so the promise holds for the actives
+separately rather than being bought by being right about the majority
+class (`results/conformal.csv`).
+
+At 90% confidence, random forest, ECFP4:
+
+| Target | split | coverage | coverage (actives) | singletons | both labels | valid |
+| --- | --- | ---: | ---: | ---: | ---: | :---: |
+| hERG | random | 0.909 | 0.888 | 70% | 30% | ✅ |
+| hERG | scaffold | 0.897 | 0.890 | 50% | 50% | ✅ |
+| D2 | random | 0.902 | 0.909 | 72% | 28% | ✅ |
+| D2 | scaffold | 0.894 | 0.887 | 63% | 37% | ✅ |
+| AChE | random | 0.897 | 0.879 | 83% | 17% | ✅ |
+| AChE | scaffold | 0.852 | 0.822 | 71% | 29% | ❌ |
+| DPP-4 | random | 0.889 | 0.886 | 81% | 19% | ✅ |
+| DPP-4 | scaffold | 0.847 | 0.842 | 70% | 30% | ❌ |
+| β2 | random | 0.895 | 0.891 | 88% | 12% | ✅ |
+| β2 | scaffold | 0.910 | 0.896 | 61% | 39% | ✅ |
+
+Two things, and the second is the interesting one.
+
+**On a random split the guarantee holds, and it is useful.** Coverage
+lands on 0.89–0.91 against a promised 0.90, and 70–88% of compounds get an
+unambiguous call. "These 312 compounds, 90% confidence, and for 260 of
+them the model has committed itself" is something a project can act on in
+a way that a ranked list is not.
+
+**On a scaffold split it starts to fail — and it should.** Coverage drops
+to 0.85 on AChE and DPP-4, missing the promise. This is not a bug in the
+implementation; it is the assumption being violated in front of you. The
+conformal guarantee holds **under exchangeability** between the
+calibration set and the test set, and a scaffold split is *constructed* to
+break exactly that: the test compounds come from chemotypes the
+calibration compounds do not cover. Across all five targets and three
+significance levels, 22 of 30 runs are valid, and **every one of the eight
+failures is on a scaffold split**.
+
+That is the same lesson as §1 arriving by a different route. A method
+whose guarantee is proved on paper still inherits the evaluation's
+assumptions, and the split that makes a model look worse is also the split
+that invalidates the promise attached to it. The honest reading: use
+conformal prediction on prospective compounds that resemble your training
+chemistry, and distrust its interval on the ones that do not — which,
+inconveniently, are the compounds a discovery project most wants to score.
+Mondrian conformal on a scaffold split is a research problem, not a
+settled tool.
+
+Efficiency behaves as it should throughout: the harder the split, the more
+often the model returns both labels instead of committing (30% → 50% on
+hERG). No prediction set was ever empty.
+
 ---
 
 ## The data
@@ -517,10 +651,16 @@ Read every number above with these in mind.
 2. **ChEMBL is a biased sample of chemistry**, as the 50–83% active rates
    show. The enrichment factors characterise the ranking on *this* test set;
    they are not the yield of a campaign against a real library.
-3. **No decoys.** A prospective screen is dominated by diverse, untested,
-   probably-inactive compounds. Here the inactives are *measured* inactives,
-   chemically close to the actives because somebody made them in the same
-   series.
+3. **Decoys are presumed inactive, and too easy.** §8 adds a 2%-active
+   decoy library, but its decoys come from the other targets in the study:
+   a compound tested against D2 and never against hERG is *probably* not a
+   hERG blocker, and nobody checked. Worse, the model clears the top 1% of
+   that library perfectly on four of five targets, so the benchmark is too
+   easy to measure anything, and on DPP-4 and β2 the decoys are not even
+   well property-matched. Real decoys from an untested vendor library are
+   the fix. The measured benchmark in §5 has the opposite problem: its
+   inactives are chemically close to its actives because somebody made them
+   in the same series.
 4. **Activity cliffs.** A single atom can cost two log units of potency.
    Methods built on 2D similarity cannot see that, and scaffold splits land
    the model squarely where it happens.
@@ -542,9 +682,14 @@ Read every number above with these in mind.
    scaffold splits — but the re-draws cover the default model and
    representation only, and the time split cannot be re-drawn at all
    because the cutoff year determines it.
-10. **No per-cell hyperparameter tuning**, deliberately. The absolute numbers
+10. **The conformal guarantee is not safe on a scaffold split.** §9 shows
+   coverage failing on two of five targets there, because the split breaks
+   the exchangeability the proof assumes. The prediction sets in this
+   repository are trustworthy on a random split and indicative at best on
+   a scaffold one.
+11. **No per-cell hyperparameter tuning**, deliberately. The absolute numbers
     are honest defaults, not the best attainable.
-11. **A threshold is a modelling choice.** pChEMBL ≥ 6 is defensible and
+12. **A threshold is a modelling choice.** pChEMBL ≥ 6 is defensible and
     stated, but for hERG in particular 1 µM block is a liability flag, not a
     regulatory criterion.
 
@@ -691,6 +836,8 @@ ligandml/
   domain.py       Applicability domain by nearest-neighbour Tanimoto
   nulls.py        Y-scrambling null models
   uncertainty.py  Spread on the split-gap estimate
+  decoys.py       Property-matched decoy libraries
+  conformal.py    Prediction sets with a coverage guarantee
   plots.py        The figures, in one shared visual system
 scripts/run_study.py   The whole study, end to end
 tests/                 370 tests

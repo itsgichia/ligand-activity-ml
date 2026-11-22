@@ -26,6 +26,12 @@ project README traces back to one testable function:
 ``uncertainty``
     Spread on the split-gap estimate: across targets and models, and
     across repeated draws of the same split.
+``decoys``
+    Property-matched decoy libraries, so the screening metrics have room
+    to discriminate instead of sitting on their ceiling.
+``conformal``
+    Prediction sets with a proved coverage guarantee, class-conditional
+    so the promise holds for the actives and not just on average.
 """
 
 from __future__ import annotations

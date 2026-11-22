@@ -1,0 +1,6 @@
+target,n_actives,n_decoys,requested_ratio,achieved_ratio,active_rate,ef_ceiling_1pct,property_bias,max_decoy_similarity,pool_exhausted
+herg,150,7350,49,49.0,0.02,50.0,0.1279,0.35,False
+d2,150,7350,49,49.0,0.02,50.0,0.2275,0.35,False
+ache,150,7350,49,49.0,0.02,50.0,0.2064,0.35,False
+dpp4,150,7350,49,49.0,0.02,50.0,0.7816,0.3494,False
+adrb2,150,7350,49,49.0,0.02,50.0,1.5132,0.3494,False

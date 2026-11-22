@@ -47,6 +47,8 @@ if str(REPO_ROOT) not in sys.path:
 from ligandml import (  # noqa: E402  # noqa: E402
     RANDOM_STATE,
     chembl,
+    conformal,
+    decoys,
     domain,
     evaluate,
     featurise,
@@ -402,6 +404,336 @@ def _headline(metrics: dict[str, float], task: str) -> str:
             f"BEDROC1% {metrics['bedroc_1pct']:.3f}"
         )
     return f"R2 {metrics['r2']:.3f} RMSE {metrics['rmse']:.3f}"
+
+
+def run_decoy_screen(
+    data: Sequence[TargetData],
+    n_actives: int,
+    ratio: int,
+    test_size: float,
+    seed: int,
+    model_name: str,
+    results_dir: Path,
+) -> pd.DataFrame:
+    """Score the models on a screening library instead of a measured set.
+
+    The measured datasets are 50-83% active, which caps enrichment factor
+    at 1.2-1.9 and leaves the screening section unable to say anything. A
+    decoy library puts the active rate where a real screen has it, so the
+    same metric has room to discriminate.
+
+    Args:
+        data: The loaded targets.
+        n_actives: Actives to sample per target.
+        ratio: Decoys per active to attach.
+        test_size: Target test fraction for the scaffold split.
+        seed: Seed for the active sample and the model.
+        model_name: Model to score.
+        results_dir: Directory for the CSV outputs.
+
+    Returns:
+        One row per target.
+    """
+    frames = {item.spec.name: item.frame for item in data}
+    rng = np.random.default_rng(seed)
+    construction: list[dict[str, Any]] = []
+    scored: list[dict[str, Any]] = []
+
+    for item in data:
+        name = item.spec.name
+        active_rows = np.flatnonzero(item.labels == 1)
+        if active_rows.size == 0:
+            LOGGER.warning("  %s: no actives, skipping decoy screen", name)
+            continue
+        keep = rng.choice(
+            active_rows, size=min(n_actives, active_rows.size), replace=False
+        )
+        active_smiles = item.frame["canonical_smiles"].to_numpy()[keep].tolist()
+
+        pool = decoys.cross_target_pool(frames, name)
+        if pool.empty:
+            LOGGER.warning("  %s: empty decoy pool, skipping", name)
+            continue
+        pool_smiles = pool["canonical_smiles"].tolist()
+
+        active_mols, active_ok = featurise.mols_from_smiles(active_smiles)
+        pool_mols, pool_ok = featurise.mols_from_smiles(pool_smiles)
+        active_smiles = [s for s, ok in zip(active_smiles, active_ok) if ok]
+        pool_smiles = [s for s, ok in zip(pool_smiles, pool_ok) if ok]
+
+        active_props, _ = featurise.rdkit_descriptors(
+            active_mols, names=decoys.MATCH_PROPERTIES
+        )
+        pool_props, _ = featurise.rdkit_descriptors(
+            pool_mols, names=decoys.MATCH_PROPERTIES
+        )
+        active_fp, _ = featurise.morgan_fingerprints(active_mols)
+        pool_fp, _ = featurise.morgan_fingerprints(pool_mols)
+        similarity = domain.nearest_neighbour_similarity(pool_fp, active_fp)
+
+        built = decoys.build_decoy_set(
+            name,
+            active_smiles,
+            active_props,
+            pool_smiles,
+            pool_props,
+            similarity,
+            ratio=ratio,
+        )
+        construction.append(built.as_row())
+        LOGGER.info(
+            "  %s: %d actives + %d decoys, %.2f%% active, "
+            "EF ceiling %.0f, property bias %.3f",
+            name,
+            built.n_actives,
+            built.n_decoys,
+            100.0 * built.active_rate,
+            built.enrichment_ceiling_1pct,
+            built.property_bias,
+        )
+
+        # Score it exactly as the measured benchmark is scored.
+        mols, ok = featurise.mols_from_smiles(list(built.smiles))
+        matrix, _ = featurise.morgan_fingerprints(mols)
+        labels = built.labels[ok]
+        frame = pd.DataFrame({"canonical_smiles": [s for s, k in zip(built.smiles, ok) if k]})
+        split = splits.scaffold_split(
+            frame["canonical_smiles"].tolist(), test_size=test_size
+        )
+        split.validate(len(frame))
+        prediction = models.fit_predict(
+            models.build_model(model_name, "classification", "fingerprint", seed=seed),
+            matrix[split.train_index],
+            labels[split.train_index],
+            matrix[split.test_index],
+            "classification",
+        )
+        observed = labels[split.test_index]
+        metrics = evaluate.classification_metrics(observed, prediction)
+        scored.append(
+            {
+                "target": name,
+                "model": model_name,
+                "benchmark": "decoy_library",
+                "n_test": int(len(observed)),
+                "active_rate": round(float(observed.mean()), 5),
+                **{
+                    k: (round(v, 4) if isinstance(v, float) else v)
+                    for k, v in metrics.items()
+                    if k
+                    in (
+                        "roc_auc",
+                        "pr_auc",
+                        "ef_1pct",
+                        "ef_ceiling_1pct",
+                        "bedroc_1pct",
+                        "hit_rate_1pct",
+                        "recall_1pct",
+                        "ef_5pct",
+                        "ef_ceiling_5pct",
+                    )
+                },
+            }
+        )
+        LOGGER.info(
+            "  %s: AUC %.3f, EF@1%% %.1f of %.0f",
+            name,
+            scored[-1].get("roc_auc", float("nan")),
+            scored[-1].get("ef_1pct", float("nan")),
+            scored[-1].get("ef_ceiling_1pct", float("nan")),
+        )
+
+    pd.DataFrame(construction).to_csv(
+        results_dir / "decoy_construction.csv", index=False
+    )
+    frame = pd.DataFrame(scored)
+    frame.to_csv(results_dir / "decoy_screen.csv", index=False)
+    LOGGER.info("wrote decoy_construction.csv and decoy_screen.csv")
+    return frame
+
+
+def run_conformal(
+    data: Sequence[TargetData],
+    representation: str,
+    model_name: str,
+    strategies: Sequence[str],
+    test_size: float,
+    seed: int,
+    calibration_fraction: float,
+    results_dir: Path,
+) -> pd.DataFrame:
+    """Turn the ranking into prediction sets with a coverage guarantee.
+
+    The training set is split again into a proper training part and a
+    calibration part the model never sees, which is what buys the
+    guarantee. Calibration is class-conditional, so the promise holds for
+    the actives separately rather than only on average.
+
+    Args:
+        data: The loaded targets.
+        representation: Representation slug.
+        model_name: Model to wrap.
+        strategies: Split strategies to report.
+        test_size: Target test fraction.
+        seed: Seed for the model and the calibration carve-out.
+        calibration_fraction: Share of the training set held for
+            calibration.
+        results_dir: Directory for the CSV output.
+
+    Returns:
+        One row per target, strategy and significance level.
+    """
+    rows: list[dict[str, Any]] = []
+    for item in data:
+        matrix = item.features[representation]
+        for strategy in strategies:
+            split = item.split(strategy, test_size, seed)
+            rng = np.random.default_rng(seed)
+            train = np.array(split.train_index)
+            rng.shuffle(train)
+            n_calibration = max(1, int(round(calibration_fraction * len(train))))
+            calibration_index, fit_index = train[:n_calibration], train[n_calibration:]
+            if len(fit_index) < 10 or len(calibration_index) < 10:
+                LOGGER.warning("  %s/%s: too few rows to calibrate", item.spec.name, strategy)
+                continue
+
+            model = models.build_model(
+                model_name, "classification", "fingerprint", seed=seed
+            )
+            model.fit(matrix[fit_index], item.labels[fit_index])
+            calibration_probs = model.predict_proba(matrix[calibration_index])
+            test_probs = model.predict_proba(matrix[split.test_index])
+
+            reports = conformal.run(
+                calibration_probs,
+                item.labels[calibration_index],
+                test_probs,
+                item.labels[split.test_index],
+            )
+            for report in reports:
+                rows.append(
+                    {
+                        "target": item.spec.name,
+                        "model": model_name,
+                        "split": strategy,
+                        "n_calibration": len(calibration_index),
+                        **report.as_row(),
+                    }
+                )
+            headline = reports[1] if len(reports) > 1 else reports[0]
+            LOGGER.info(
+                "  %s/%s: at %.0f%% confidence coverage %.3f "
+                "(actives %.3f), %.0f%% singletons, %.0f%% empty",
+                item.spec.name,
+                strategy,
+                100 * headline.target_coverage,
+                headline.coverage,
+                headline.coverage_by_class.get(1, float("nan")),
+                100 * headline.singleton_rate,
+                100 * headline.empty_rate,
+            )
+
+    frame = pd.DataFrame(rows)
+    frame.to_csv(results_dir / "conformal.csv", index=False)
+    LOGGER.info("wrote conformal.csv (%d rows)", len(frame))
+    return frame
+
+
+def run_time_cutoff_sensitivity(
+    data: Sequence[TargetData],
+    representation: str,
+    model_name: str,
+    results_dir: Path,
+    seed: int,
+) -> pd.DataFrame:
+    """Does the time-split gap depend on where the line is drawn?
+
+    A time split has no seed, so its counterpart to re-drawing is moving
+    the cutoff year. If the gap only appears at one particular cutoff it
+    is an artefact of that choice; if it survives three, it is not.
+
+    Args:
+        data: The loaded targets.
+        representation: Representation slug.
+        model_name: Model to score.
+        results_dir: Directory for the CSV output.
+        seed: Seed for the model and the random reference split.
+
+    Returns:
+        One row per target and cutoff.
+    """
+    rows: list[dict[str, Any]] = []
+    for item in data:
+        matrix = item.features[representation]
+        years = item.frame["first_year"].tolist()
+        try:
+            cutoffs = uncertainty.time_cutoff_grid(years)
+        except ValueError:
+            LOGGER.warning("  %s: no usable years", item.spec.name)
+            continue
+        reference = splits.random_split(len(item.frame), seed=seed)
+        reference_auc = _score_auc(
+            matrix, item.labels, reference, model_name, seed
+        )
+        for cutoff in cutoffs:
+            mask = np.asarray(
+                [y == y and y is not None and float(y) >= cutoff for y in years]
+            )
+            test_index = np.flatnonzero(mask)
+            train_index = np.flatnonzero(~mask)
+            if len(test_index) < 25 or len(train_index) < 50:
+                continue
+            split = splits.SplitResult(
+                strategy="time",
+                train_index=train_index,
+                test_index=test_index,
+                details={"cutoff_year": cutoff},
+            )
+            auc = _score_auc(matrix, item.labels, split, model_name, seed)
+            rows.append(
+                {
+                    "target": item.spec.name,
+                    "model": model_name,
+                    "cutoff_year": cutoff,
+                    "n_train": len(train_index),
+                    "n_test": len(test_index),
+                    "test_fraction": round(len(test_index) / len(mask), 4),
+                    "roc_auc": round(auc, 4),
+                    "random_reference": round(reference_auc, 4),
+                    "gap_vs_random": round(reference_auc - auc, 4),
+                }
+            )
+            LOGGER.info(
+                "  %s cutoff %d: AUC %.3f, gap %+.3f",
+                item.spec.name,
+                cutoff,
+                auc,
+                reference_auc - auc,
+            )
+
+    frame = pd.DataFrame(rows)
+    frame.to_csv(results_dir / "time_cutoff_sensitivity.csv", index=False)
+    LOGGER.info("wrote time_cutoff_sensitivity.csv (%d rows)", len(frame))
+    return frame
+
+
+def _score_auc(
+    matrix: np.ndarray,
+    labels: np.ndarray,
+    split: splits.SplitResult,
+    model_name: str,
+    seed: int,
+) -> float:
+    """Fit one cell and return its ROC AUC."""
+    prediction = models.fit_predict(
+        models.build_model(model_name, "classification", "fingerprint", seed=seed),
+        matrix[split.train_index],
+        labels[split.train_index],
+        matrix[split.test_index],
+        "classification",
+    )
+    metrics = evaluate.classification_metrics(labels[split.test_index], prediction)
+    return float(metrics["roc_auc"])
 
 
 def run_repeated_splits(
@@ -1305,6 +1637,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="split re-draws for the seed-variability stage",
     )
     parser.add_argument(
+        "--decoy-actives", type=int, default=150,
+        help="actives sampled per target for the decoy screen",
+    )
+    parser.add_argument(
+        "--decoy-ratio", type=int, default=decoys.DEFAULT_DECOY_RATIO,
+        help="decoys attached per active",
+    )
+    parser.add_argument(
+        "--calibration-fraction", type=float, default=0.25,
+        help="share of training held out to calibrate the conformal predictor",
+    )
+    parser.add_argument(
         "--permutations", type=int, default=nulls.N_PERMUTATIONS,
         help=f"y-scrambling permutations (default: {nulls.N_PERMUTATIONS})",
     )
@@ -1320,7 +1664,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--skip", nargs="+", default=[],
-        choices=["representations", "domain", "screening", "nulls", "space", "repeats"],
+        choices=["representations", "domain", "screening", "nulls", "space", "repeats", "decoys", "conformal", "cutoffs"],
         help="stages to skip",
     )
     return parser
@@ -1406,6 +1750,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     write_headline_figures(
         comparison, data, default_model, args.figures_dir, args.results_dir
     )
+
+    if "decoys" not in args.skip and len(data) > 1:
+        LOGGER.info("[decoys] property-matched screening library")
+        run_decoy_screen(
+            data, args.decoy_actives, args.decoy_ratio, args.test_size,
+            args.seed, default_model, args.results_dir,
+        )
+
+    if "conformal" not in args.skip and "classification" in tasks:
+        LOGGER.info("[conformal] prediction sets with a coverage guarantee")
+        run_conformal(
+            data, featurise.DEFAULT_REPRESENTATION, default_model,
+            [s for s in strategies if s in ("random", "scaffold")] or strategies[:1],
+            args.test_size, args.seed, args.calibration_fraction, args.results_dir,
+        )
+
+    if "cutoffs" not in args.skip and "time" in strategies:
+        LOGGER.info("[cutoffs] does the time gap survive moving the line?")
+        run_time_cutoff_sensitivity(
+            data, featurise.DEFAULT_REPRESENTATION, default_model,
+            args.results_dir, args.seed,
+        )
 
     if "repeats" not in args.skip and args.repeat_seeds > 1:
         LOGGER.info("[repeats] %d split re-draws per target", args.repeat_seeds)

@@ -1,0 +1,25 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+      # The driver imports the whole package and builds its parser, so this
+      # catches an import error or a malformed argument that the unit tests
+      # would miss. The study proper needs cached ChEMBL data and is not run
+      # here.
+      - run: python scripts/run_study.py --help
