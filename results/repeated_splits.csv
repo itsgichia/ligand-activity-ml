@@ -1,0 +1,11 @@
+target,metric,strategy,n_seeds,mean,sd,min,max,mean_gap_vs_reference,sd_gap_vs_reference
+herg,roc_auc,random,5,0.8831,0.0079,0.8747,0.8945,,
+herg,roc_auc,scaffold,5,0.8371,0.0137,0.8186,0.8484,0.046,0.014
+d2,roc_auc,random,5,0.8767,0.0073,0.8655,0.8841,,
+d2,roc_auc,scaffold,5,0.8412,0.0169,0.8223,0.8571,0.0355,0.0135
+ache,roc_auc,random,5,0.9149,0.0079,0.9021,0.922,,
+ache,roc_auc,scaffold,5,0.8659,0.0108,0.8524,0.8825,0.049,0.0123
+dpp4,roc_auc,random,5,0.9138,0.0121,0.8954,0.9246,,
+dpp4,roc_auc,scaffold,5,0.872,0.0324,0.8356,0.9141,0.0418,0.0443
+adrb2,roc_auc,random,5,0.913,0.0082,0.9041,0.9218,,
+adrb2,roc_auc,scaffold,5,0.9067,0.0189,0.8889,0.9358,0.0063,0.0249

@@ -54,6 +54,7 @@ from ligandml import (  # noqa: E402  # noqa: E402
     nulls,
     plots,
     splits,
+    uncertainty,
 )
 
 LOGGER = logging.getLogger("run_study")
@@ -403,6 +404,174 @@ def _headline(metrics: dict[str, float], task: str) -> str:
     return f"R2 {metrics['r2']:.3f} RMSE {metrics['rmse']:.3f}"
 
 
+def run_repeated_splits(
+    data: Sequence[TargetData],
+    representation: str,
+    model_name: str,
+    task: str,
+    test_size: float,
+    seeds: Sequence[int],
+    results_dir: Path,
+) -> pd.DataFrame:
+    """Re-draw the random and scaffold splits under several seeds.
+
+    The rest of the study draws each split once, so its gap carries no
+    seed-to-seed spread. This is the error bar a cheminformatics benchmark
+    normally quotes, and it is the one a reader asks for first.
+
+    One honest wrinkle: the study's scaffold split fills the largest
+    chemotypes into training first, which is deterministic, so re-seeding
+    it changes nothing. To get a distribution at all the repeats shuffle
+    the scaffold groups instead. That is a slightly easier split than the
+    largest-first construction, so these absolute numbers sit above the
+    headline table; the spread, which is what this stage exists to
+    measure, is the part to read.
+
+    The time split has no seed at all, so it is absent here; its
+    sensitivity analysis is over the cutoff year instead.
+
+    Args:
+        data: The loaded targets.
+        representation: Representation slug.
+        model_name: The single model to repeat.
+        task: ``classification`` or ``regression``.
+        test_size: Target test fraction.
+        seeds: Seeds to draw.
+        results_dir: Directory for the CSV outputs.
+
+    Returns:
+        The per-target summary over seeds.
+    """
+    kind = featurise.get_representation(representation).kind
+    metric = HEADLINE_METRIC if task == "classification" else "spearman_rho"
+    draws: list[dict[str, Any]] = []
+    summaries: list[dict[str, Any]] = []
+
+    for item in data:
+        matrix = item.features[representation]
+        smiles = item.frame["canonical_smiles"].tolist()
+        target_values = item.labels if task == "classification" else item.values
+        scores: dict[str, list[float]] = {"random": [], "scaffold": []}
+        for seed in seeds:
+            for strategy in ("random", "scaffold"):
+                if strategy == "random":
+                    split = splits.random_split(
+                        len(item.frame), test_size=test_size, seed=seed
+                    )
+                else:
+                    split = splits.scaffold_split(
+                        smiles, test_size=test_size, shuffle_groups=True, seed=seed
+                    )
+                split.validate(len(item.frame))
+                started = time.perf_counter()
+                prediction = models.fit_predict(
+                    models.build_model(model_name, task, kind, seed=seed),
+                    matrix[split.train_index],
+                    target_values[split.train_index],
+                    matrix[split.test_index],
+                    task,
+                )
+                observed = target_values[split.test_index]
+                metrics = (
+                    evaluate.classification_metrics(observed, prediction)
+                    if task == "classification"
+                    else evaluate.regression_metrics(observed, prediction)
+                )
+                value = float(metrics[metric])
+                scores[strategy].append(value)
+                draws.append(
+                    {
+                        "target": item.spec.name,
+                        "model": model_name,
+                        "representation": representation,
+                        "task": task,
+                        "strategy": strategy,
+                        "seed": seed,
+                        "n_train": split.n_train,
+                        "n_test": split.n_test,
+                        "metric": metric,
+                        "value": round(value, 4),
+                        "fit_seconds": round(time.perf_counter() - started, 2),
+                    }
+                )
+        for row in uncertainty.summarise_repeats(scores):
+            summaries.append({"target": item.spec.name, "metric": metric, **row})
+        gap = next(
+            (r for r in summaries[-2:] if r["strategy"] == "scaffold"), None
+        )
+        if gap is not None:
+            LOGGER.info(
+                "  %s: gap %+0.4f +/- %0.4f over %d seeds",
+                item.spec.name,
+                gap.get("mean_gap_vs_reference", float("nan")),
+                gap.get("sd_gap_vs_reference", float("nan")),
+                len(seeds),
+            )
+
+    pd.DataFrame(draws).to_csv(results_dir / "repeated_split_draws.csv", index=False)
+    frame = pd.DataFrame(summaries)
+    frame.to_csv(results_dir / "repeated_splits.csv", index=False)
+    LOGGER.info(
+        "wrote repeated_splits.csv (%d rows) and repeated_split_draws.csv (%d rows)",
+        len(frame),
+        len(draws),
+    )
+    return frame
+
+
+def write_gap_uncertainty(gaps: pd.DataFrame, results_dir: Path) -> pd.DataFrame:
+    """Put a spread on the averaged split gap.
+
+    The headline sentence averages the gap over every target and model, so
+    the uncertainty that belongs beside it is the one across those cells:
+    it answers whether the effect survives changing the chemistry and the
+    model family, rather than how precisely one test set pins one number
+    down. Both a t interval and the Wilcoxon signed-rank statistic are
+    written, since twenty paired cells with a known exception is exactly
+    the case where a mean and a median can disagree.
+
+    Args:
+        gaps: The per-cell gap table from :func:`write_split_gap`.
+        results_dir: Directory for the CSV output.
+
+    Returns:
+        One row per task and comparison.
+    """
+    rows: list[dict[str, Any]] = []
+    for task, group in gaps.groupby("task", sort=False):
+        metric = str(group["metric"].iloc[0])
+        labels = [f"{r.target}/{r.model}" for r in group.itertuples()]
+        for strategy in ("scaffold", "time"):
+            column = f"drop_vs_random_{strategy}"
+            if column not in group.columns:
+                continue
+            values = group[column].tolist()
+            if not any(v == v for v in values):
+                continue
+            summary = uncertainty.summarise_gaps(
+                values, f"random to {strategy}", metric, labels=labels
+            )
+            rows.append({"task": task, **summary.as_row()})
+
+    frame = pd.DataFrame(rows)
+    frame.to_csv(results_dir / "split_gap_uncertainty.csv", index=False)
+    for row in rows:
+        LOGGER.info(
+            "  %s %s: %+0.4f (95%% CI %+0.4f to %+0.4f), "
+            "%d/%d cells agree, Wilcoxon p=%.4f",
+            row["task"],
+            row["comparison"],
+            row["mean_gap"],
+            row["ci95_low"],
+            row["ci95_high"],
+            row["n_cells_positive"],
+            row["n_cells"],
+            row["wilcoxon_p"],
+        )
+    LOGGER.info("wrote split_gap_uncertainty.csv (%d rows)", len(frame))
+    return frame
+
+
 def write_split_gap(
     comparison: pd.DataFrame, results_dir: Path, figures_dir: Path
 ) -> pd.DataFrame:
@@ -454,6 +623,7 @@ def write_split_gap(
     frame = pd.DataFrame(gap_rows)
     frame.to_csv(results_dir / "split_gap.csv", index=False)
     LOGGER.info("wrote split_gap.csv (%d rows)", len(frame))
+    write_gap_uncertainty(frame, results_dir)
 
     classification = frame[frame["task"] == "classification"]
     if not classification.empty:
@@ -1131,6 +1301,10 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"target test fraction (default: {splits.DEFAULT_TEST_SIZE})",
     )
     parser.add_argument(
+        "--repeat-seeds", type=int, default=5,
+        help="split re-draws for the seed-variability stage",
+    )
+    parser.add_argument(
         "--permutations", type=int, default=nulls.N_PERMUTATIONS,
         help=f"y-scrambling permutations (default: {nulls.N_PERMUTATIONS})",
     )
@@ -1146,7 +1320,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--skip", nargs="+", default=[],
-        choices=["representations", "domain", "screening", "nulls", "space"],
+        choices=["representations", "domain", "screening", "nulls", "space", "repeats"],
         help="stages to skip",
     )
     return parser
@@ -1232,6 +1406,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     write_headline_figures(
         comparison, data, default_model, args.figures_dir, args.results_dir
     )
+
+    if "repeats" not in args.skip and args.repeat_seeds > 1:
+        LOGGER.info("[repeats] %d split re-draws per target", args.repeat_seeds)
+        run_repeated_splits(
+            data,
+            featurise.DEFAULT_REPRESENTATION,
+            default_model,
+            "classification" if "classification" in tasks else tasks[0],
+            args.test_size,
+            [args.seed + i for i in range(args.repeat_seeds)],
+            args.results_dir,
+        )
 
     representation_frame = pd.DataFrame()
     if "representations" not in args.skip and len(representations) > 1:

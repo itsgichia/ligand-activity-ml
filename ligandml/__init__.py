@@ -23,6 +23,9 @@ project README traces back to one testable function:
     Applicability domain by nearest-neighbour Tanimoto similarity.
 ``nulls``
     Y-scrambling (label permutation) null models.
+``uncertainty``
+    Spread on the split-gap estimate: across targets and models, and
+    across repeated draws of the same split.
 """
 
 from __future__ import annotations

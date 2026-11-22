@@ -9,8 +9,11 @@ The models work. The point of this repository is the second question:
 
 Changing nothing but the train/test split — same data, same models, same
 seed — moves the headline number from **ROC AUC 0.88 to 0.79 to 0.71**, and
-regression R² from **0.67 to 0.46 to 0.23**. Every number below was produced
-by the code in this repository, on data it fetched itself.
+regression R² from **0.67 to 0.46 to 0.23** (random forest; averaged over
+every model it is 0.59 to 0.34 to **−0.03**, worse than predicting the
+training mean). The ROC AUC gap holds in **20 of 20** target × model cells,
+95% CI 0.070–0.088. Every number below was produced by the code in this
+repository, on data it fetched itself.
 
 ---
 
@@ -98,6 +101,74 @@ target (2,046 compounds), its time split holds only 372 test compounds, and
 year** — the largest such loss in the study. One target out of five breaking
 the pattern on the noisiest split is what an honest table looks like; a
 perfectly monotone one would be more suspicious.
+
+#### How much to trust that average
+
+An average over twenty cells needs a spread, and which spread depends on
+what you want to generalise over. Two are reported, because they answer
+different questions.
+
+**Across targets and models** (`results/split_gap_uncertainty.csv`). The
+gap is measured once per target and model, so the twenty cells are twenty
+paired observations. This is the spread that belongs beside the headline
+sentence, because the sentence is a claim about an average over exactly
+those cells:
+
+| Framing | metric | comparison | mean gap | 95% CI | cells agreeing | Wilcoxon p |
+| --- | --- | --- | ---: | :---: | ---: | ---: |
+| Classification | ROC AUC | random → scaffold | **0.079** | 0.070 – 0.088 | 20/20 | 0.0001 |
+| Classification | ROC AUC | random → time | **0.146** | 0.114 – 0.178 | 19/20 | 0.0001 |
+| Regression | Spearman ρ | random → scaffold | **0.148** | 0.132 – 0.163 | 20/20 | 0.0001 |
+| Regression | Spearman ρ | random → time | **0.303** | 0.259 – 0.348 | 20/20 | 0.0001 |
+
+The interval is a paired t interval; the Wilcoxon signed-rank statistic is
+reported beside it because twenty paired values containing one known
+exception is precisely the case where a mean and a median can disagree,
+and the reader is entitled to see both rather than whichever is prettier.
+The single dissenting cell is named in the table rather than averaged
+away: β2-adrenergic / random forest, the exception discussed above.
+
+A bootstrap over test compounds — which §5 does use for the enrichment
+factors — answers a narrower question: how precisely *this* test set pins
+down *this* number. It is the wrong instrument for a claim about an
+average over five targets, so it is not the primary estimate here.
+
+**Across split draws** (`results/repeated_splits.csv`). Any one split is a
+sample. Re-drawing it under five seeds gives the error bar a
+cheminformatics benchmark normally quotes. Random forest, ECFP4, five
+seeds per target:
+
+| Target | random (mean ± sd) | scaffold (mean ± sd) | gap ± sd |
+| --- | :---: | :---: | ---: |
+| hERG | 0.883 ± 0.008 | 0.837 ± 0.014 | 0.046 ± 0.014 |
+| D2 | 0.877 ± 0.007 | 0.841 ± 0.017 | 0.036 ± 0.014 |
+| AChE | 0.915 ± 0.008 | 0.866 ± 0.011 | 0.049 ± 0.012 |
+| DPP-4 | 0.914 ± 0.012 | 0.872 ± 0.032 | 0.042 ± 0.044 |
+| β2-adrenergic | 0.913 ± 0.008 | 0.907 ± 0.019 | **0.006 ± 0.025** |
+
+Three things fall out of this table, and the third was not expected.
+
+First, **a scaffold split is roughly twice as volatile as a random one**
+(sd 0.011–0.032 against 0.007–0.012). Which chemotypes happen to land in
+the test set matters, so a single scaffold split is a noisier instrument
+than a single random split — DPP-4 most of all, where the gap's own
+standard deviation (0.044) exceeds its mean (0.042).
+
+Second, **β2-adrenergic is the exception on this axis too.** Its gap is
+0.006 ± 0.025, indistinguishable from zero, matching its behaviour on the
+time split. It is not one odd split; splitting genuinely does not cost
+much on that target.
+
+Third, and most usefully: the mean gap here is **0.036, less than half the
+headline 0.079**. The repeats have to shuffle the scaffold groups, because
+the study's own scaffold split fills the largest chemotypes into training
+first and is therefore deterministic — re-seeding it changes nothing. A
+shuffled-group split is the easier construction. So **how you build the
+scaffold split matters about as much as whether you use one at all**, and
+a paper reporting "a scaffold split" without saying which construction has
+left out something worth about 0.04 of ROC AUC. The headline number in
+this README is the largest-first construction, the harder and more
+conservative of the two.
 
 ### 2. Why: a random split leaks most of the test set
 
@@ -465,8 +536,12 @@ Read every number above with these in mind.
    and research groups produced them. Its drop is an upper bound on the
    purely chemical generalisation gap — and a fair estimate of the gap a real
    project faces.
-9. **One split per strategy.** The bootstrap intervals quantify test-set
-   sampling error only.
+9. **One split per strategy in the headline grid.** The 170-cell table draws
+   each split once. §1 puts two spreads around that — across the twenty
+   target × model cells, and across five re-draws of the random and
+   scaffold splits — but the re-draws cover the default model and
+   representation only, and the time split cannot be re-drawn at all
+   because the cutoff year determines it.
 10. **No per-cell hyperparameter tuning**, deliberately. The absolute numbers
     are honest defaults, not the best attainable.
 11. **A threshold is a modelling choice.** pChEMBL ≥ 6 is defensible and
@@ -615,6 +690,7 @@ ligandml/
   evaluate.py     Regression, classification, EF, BEDROC, calibration, bootstrap
   domain.py       Applicability domain by nearest-neighbour Tanimoto
   nulls.py        Y-scrambling null models
+  uncertainty.py  Spread on the split-gap estimate
   plots.py        The figures, in one shared visual system
 scripts/run_study.py   The whole study, end to end
 tests/                 370 tests
